@@ -558,44 +558,6 @@ namespace ParallelCryptography
                 Complete = false;
             }
 
-            public void PrepareBlock(ref byte block)
-            {
-                int len = Math.Min(64, Length() - _dataidx);
-
-                if (len == 0)
-                {
-                    if (!appended)
-                    {
-                        block = 0x80;
-                        appended = true;
-                    }
-
-                    Unsafe.As<byte, ulong>(ref Unsafe.Add(ref block, 64 - 8)) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
-                    Complete = true;
-                    return;
-                }
-
-                _data.AsSpan(_dataidx, len).CopyTo(MemoryMarshal.CreateSpan(ref block, 64));
-                _dataidx += len;
-
-                if (_dataidx == _data.Length)
-                {
-                    int spaceLeft = 64 - len;
-
-                    if (spaceLeft > 0)
-                    {
-                        Unsafe.Add(ref block, len) = 0x80;
-                        appended = true;
-
-                        if (spaceLeft - 1 >= 8)
-                        {
-                            Unsafe.As<byte, ulong>(ref Unsafe.Add(ref block, 64 - 8)) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
-                            Complete = true;
-                        }
-                    }
-                }
-            }
-
             [MethodImpl(MethodImplOptions.AggressiveOptimization)]
             public void PrepareBlock(Span<byte> span)
             {
@@ -605,6 +567,8 @@ namespace ParallelCryptography
 
                 if (len == 0)
                 {
+                    span.Clear();
+
                     if (!appended)
                     {
                         span[0] = 0x80;
@@ -618,6 +582,11 @@ namespace ParallelCryptography
 
                 _data.AsSpan(_dataidx, len).CopyTo(span);
                 _dataidx += len;
+
+                if (len != 64)
+                {
+                    span.Slice(len).Clear();
+                }
 
                 if (_dataidx == _data.Length)
                 {
