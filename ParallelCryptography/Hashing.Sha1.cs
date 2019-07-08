@@ -22,6 +22,19 @@ namespace ParallelCryptography
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static unsafe byte[][] SHA1Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
+            if (!Sse2.IsSupported)
+            {
+                byte[] hash1, hash2, hash3, hash4;
+
+                hash1 = SHA1(data1);
+                hash2 = SHA1(data2);
+                hash3 = SHA1(data3);
+                hash4 = SHA1(data4);
+
+                return new byte[][] { hash1, hash2, hash3, hash4 };
+            }
+
+
             Span<Vector128<uint>> state = stackalloc Vector128<uint>[5];
             Span<bool> flags = stackalloc bool[4];
             SHA1DataContext[] contexts = new SHA1DataContext[4];
