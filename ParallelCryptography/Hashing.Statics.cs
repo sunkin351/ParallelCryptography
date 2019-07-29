@@ -188,7 +188,7 @@ namespace ParallelCryptography
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void WriteBitsize(Span<byte> span)
             {
-                Unsafe.As<byte, ulong>(ref span[span.Length - 8]) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
+                BinaryPrimitives.WriteUInt64BigEndian(span.Slice(span.Length - sizeof(ulong)), _bitsize);
             }
         }
     }
