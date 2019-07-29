@@ -42,6 +42,8 @@ namespace ParallelCryptography
             }
             while (!ctx.Complete);
 
+            PooledMemory.Return(chunkMemory);
+
             if (BitConverter.IsLittleEndian)
             {
                 ReverseEndianess(state);
@@ -50,6 +52,7 @@ namespace ParallelCryptography
             return hash;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[][] SHA256Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Sse2.IsSupported)
@@ -275,6 +278,7 @@ namespace ParallelCryptography
             state[7] = Sse2.Add(h, state[7]);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA256(Span<uint> chunk)
         {
             if (BitConverter.IsLittleEndian)

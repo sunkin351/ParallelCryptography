@@ -12,8 +12,6 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
-
-
         public static byte[] SHA1(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
