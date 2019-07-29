@@ -12,43 +12,60 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
-        private static readonly ArrayPool<uint> poolMemory = ArrayPool<uint>.Create();
 
-        private static readonly Vector128<int> GatherIndex = Vector128.Create(0, 80, 80 * 2, 80 * 3);
-        private static readonly Vector128<byte> ShuffleConstant = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
-        private static readonly Vector128<uint> LoadMask = Vector128.Create(uint.MaxValue, uint.MaxValue, uint.MaxValue, 0);
-        private static readonly uint[] InitState = new uint[5] { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
+
+        public static byte[] SHA1(byte[] data)
+        {
+            SHADataContext ctx = new SHADataContext(data);
+
+            byte[] hash = new byte[sizeof(uint) * 5];
+
+            Span<uint> state = MemoryMarshal.Cast<byte, uint>(hash);
+
+            SHA1InitState.AsSpan().CopyTo(state);
+
+            uint[] chunkMemory = PooledMemory.Rent(80);
+            Span<uint> schedule = chunkMemory.AsSpan(0, 80); //Chunk memory could be larger
+            Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(schedule.Slice(0, 16));
+
+            do
+            {
+                ctx.PrepareBlock(dataPortion);
+                InitScheduleSHA1(schedule);
+                ProcessBlockSHA1(state, schedule);
+            }
+            while (!ctx.Complete);
+
+            PooledMemory.Return(chunkMemory);
+
+            if (BitConverter.IsLittleEndian)
+            {
+                ReverseEndianess(state);
+            }
+
+            return hash;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static unsafe byte[][] SHA1Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Sse2.IsSupported)
             {
-                byte[] hash1, hash2, hash3, hash4;
-
-                hash1 = SHA1(data1);
-                hash2 = SHA1(data2);
-                hash3 = SHA1(data3);
-                hash4 = SHA1(data4);
-
-                return new byte[][] { hash1, hash2, hash3, hash4 };
+                throw new NotSupportedException("SSE2 instructions not available");
             }
-
 
             Span<Vector128<uint>> state = stackalloc Vector128<uint>[5];
             Span<bool> flags = stackalloc bool[4];
-            SHA1DataContext[] contexts = new SHA1DataContext[4];
+            SHADataContext[] contexts = new SHADataContext[4];
 
-            uint[] chunkData = poolMemory.Rent(80 * 4);
-            Span<uint> chunk = chunkData.AsSpan(0, 80 * 4);
-            byte[][] hashes = new byte[4][];
+            contexts[0] = new SHADataContext(data1);
+            contexts[1] = new SHADataContext(data2);
+            contexts[2] = new SHADataContext(data3);
+            contexts[3] = new SHADataContext(data4);
 
-            int i;
-
-            for (i = 0; i < hashes.Length; ++i)
-            {
-                hashes[i] = new byte[sizeof(int) * 5];
-            }
+            uint[] scheduleMemory = PooledMemory.Rent(80 * 4);
+            Span<uint> schedule = scheduleMemory.AsSpan(0, 80 * 4);
+            byte[][] hashes = AllocateHashs(4, sizeof(uint) * 5);
 
             state[0] = Vector128.Create(0x67452301u);
             state[1] = Vector128.Create(0xEFCDAB89u);
@@ -56,12 +73,7 @@ namespace ParallelCryptography
             state[3] = Vector128.Create(0x10325476u);
             state[4] = Vector128.Create(0xC3D2E1F0u);
 
-            contexts[0] = new SHA1DataContext(data1);
-            contexts[1] = new SHA1DataContext(data2);
-            contexts[2] = new SHA1DataContext(data3);
-            contexts[3] = new SHA1DataContext(data4);
-
-            int concurrentHashes;
+            int concurrentHashes, i;
 
             do
             {
@@ -69,28 +81,28 @@ namespace ParallelCryptography
 
                 for (i = 0; i < 4; ++i)
                 {
-                    ref SHA1DataContext ctx = ref contexts[i];
+                    ref SHADataContext ctx = ref contexts[i];
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.Cast<uint, byte>(chunk.Slice(i * 80, 16)));
+                        ctx.PrepareBlock(MemoryMarshal.Cast<uint, byte>(schedule.Slice(i * 80, 16)));
                         concurrentHashes += ctx.Complete ? 0 : 1;
 
-                        InitChunk(chunk.Slice(i * 80, 80));
+                        InitScheduleSHA1(schedule.Slice(i * 80, 80));
                     }
                 }
 
-                ProcessBlocksParallel(state, chunkData);
+                ProcessBlocksParallelSHA1(state, schedule);
 
                 for (i = 0; i < 4; ++i)
                 {
-                    ref SHA1DataContext ctx = ref contexts[i];
+                    ref SHADataContext ctx = ref contexts[i];
 
                     if (flags[i] != ctx.Complete)
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i + i]);
+                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
 
                         ExtractHashFromState(state, hash, i);
                     }
@@ -100,13 +112,13 @@ namespace ParallelCryptography
 
             for (i = 0; i < 4; ++i)
             {
-                ref SHA1DataContext ctx = ref contexts[i];
+                ref SHADataContext ctx = ref contexts[i];
 
                 if (ctx.Complete)
                     continue;
 
-                Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i + i]);
-                Span<uint> block = chunk.Slice(0, 80);
+                Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
+                Span<uint> block = schedule.Slice(0, 80);
 
                 ExtractHashFromState(state, hash, i);
 
@@ -116,115 +128,35 @@ namespace ParallelCryptography
                 {
                     ctx.PrepareBlock(dataBlock);
 
-                    InitChunk(block);
+                    InitScheduleSHA1(block);
 
-                    ProcessBlock(hash, block);
+                    ProcessBlockSHA1(hash, block);
 
                 } while (!ctx.Complete);
             }
 
-            poolMemory.Return(chunkData);
+            PooledMemory.Return(scheduleMemory);
 
             //Hash byte order correction
             if (BitConverter.IsLittleEndian)
             {
                 foreach(var hash in hashes)
                 {
-                    if (Ssse3.IsSupported)
-                    {
-                        ref Vector128<byte> vec = ref Unsafe.As<byte, Vector128<byte>>(ref hash[0]);
-                        vec = Ssse3.Shuffle(vec, ShuffleConstant);
-
-                        ref uint tmp = ref Unsafe.Add(ref Unsafe.As<Vector128<byte>, uint>(ref vec), 4);
-
-                        tmp = BinaryPrimitives.ReverseEndianness(tmp);
-                    }
-                    else
-                    {
-                        Span<uint> span = MemoryMarshal.Cast<byte, uint>(hash);
-
-                        span[0] = BinaryPrimitives.ReverseEndianness(span[0]);
-                        span[1] = BinaryPrimitives.ReverseEndianness(span[1]);
-                        span[2] = BinaryPrimitives.ReverseEndianness(span[2]);
-                        span[3] = BinaryPrimitives.ReverseEndianness(span[3]);
-                        span[4] = BinaryPrimitives.ReverseEndianness(span[4]);
-                    }
+                    ReverseEndianess(MemoryMarshal.Cast<byte, uint>(hash));
                 }
             }
 
             return hashes;
         }
 
-        public static byte[] SHA1(byte[] data)
-        {
-            SHA1DataContext ctx = new SHA1DataContext(data);
-
-            byte[] hash = new byte[sizeof(uint) * 5];
-
-            Span<uint> state = MemoryMarshal.CreateSpan(ref Unsafe.As<byte, uint>(ref hash[0]), 5);
-
-            InitState.AsSpan().CopyTo(state);
-
-            uint[] chunkMemory = poolMemory.Rent(80);
-            Span<uint> chunk = chunkMemory.AsSpan(0, 80); //Chunk memory could be larger
-            Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(chunk.Slice(0, 16));
-
-            do
-            {
-                ctx.PrepareBlock(dataPortion);
-                InitChunk(chunk);
-                ProcessBlock(state, chunk);
-            }
-            while (!ctx.Complete);
-
-            poolMemory.Return(chunkMemory);
-
-            if (BitConverter.IsLittleEndian)
-            {
-                if (Ssse3.IsSupported)
-                {
-                    ref Vector128<byte> vec = ref Unsafe.As<byte, Vector128<byte>>(ref hash[0]);
-                    vec = Ssse3.Shuffle(vec, ShuffleConstant);
-
-                    ref uint tmp = ref Unsafe.Add(ref Unsafe.As<Vector128<byte>, uint>(ref vec), 4);
-
-                    tmp = BinaryPrimitives.ReverseEndianness(tmp);
-                }
-                else
-                {
-                    state[0] = BinaryPrimitives.ReverseEndianness(state[0]);
-                    state[1] = BinaryPrimitives.ReverseEndianness(state[1]);
-                    state[2] = BinaryPrimitives.ReverseEndianness(state[2]);
-                    state[3] = BinaryPrimitives.ReverseEndianness(state[3]);
-                    state[4] = BinaryPrimitives.ReverseEndianness(state[4]);
-                }
-            }
-
-            return hash;
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitChunk(Span<uint> chunk)
+        private static unsafe void InitScheduleSHA1(Span<uint> chunk)
         {
             Debug.Assert(chunk.Length == 80);
 
             if (BitConverter.IsLittleEndian)
             {
-                for (int i = 0; i < 16; i += 4)
-                {
-                    if (Ssse3.IsSupported)
-                    {
-                        ref Vector128<uint> tmp = ref Unsafe.As<uint, Vector128<uint>>(ref chunk[i]);
-                        tmp = Ssse3.Shuffle(tmp.AsByte(), ShuffleConstant).AsUInt32();
-                    }
-                    else
-                    {
-                        chunk[i] = BinaryPrimitives.ReverseEndianness(chunk[i]);
-                        chunk[i + 1] = BinaryPrimitives.ReverseEndianness(chunk[i + 1]);
-                        chunk[i + 2] = BinaryPrimitives.ReverseEndianness(chunk[i + 2]);
-                        chunk[i + 3] = BinaryPrimitives.ReverseEndianness(chunk[i + 3]);
-                    }
-                }
+                ReverseEndianess(chunk.Slice(0, 16));
             }
 
             if (Sse2.IsSupported)
@@ -253,10 +185,12 @@ namespace ParallelCryptography
 
                         tmp = Sse2.Xor(tmp, tmp2);
 
+                        //RotateLeft(tmp, 1)
                         tmp2 = Sse2.ShiftRightLogical(tmp, 31);
                         tmp = Sse2.ShiftLeftLogical(tmp, 1);
                         tmp = Sse2.Or(tmp, tmp2);
 
+                        //complete the result for the last element
                         if (Sse41.IsSupported)
                         {
                             uint val = Sse2.ConvertToUInt32(tmp);
@@ -287,7 +221,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlocksParallel(Span<Vector128<uint>> state, uint[] chunkData)
+        private static unsafe void ProcessBlocksParallelSHA1(Span<Vector128<uint>> state, Span<uint> chunkData)
         {
             Debug.Assert(state.Length == 5);
             Debug.Assert(chunkData.Length >= 80 * 4);
@@ -316,7 +250,7 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), GatherIndex);
+                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), SHA1GatherIndex);
                         t = Avx2.GatherVector128(chunk, idx, 4);
                     }
                     else
@@ -347,7 +281,7 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), GatherIndex);
+                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), SHA1GatherIndex);
                         t = Avx2.GatherVector128(chunk, idx, 4);
                     }
                     else
@@ -379,7 +313,7 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), GatherIndex);
+                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), SHA1GatherIndex);
                         t = Avx2.GatherVector128(chunk, idx, 4);
                     }
                     else
@@ -410,7 +344,7 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), GatherIndex);
+                        Vector128<int> idx = Sse2.Add(Vector128.Create(i), SHA1GatherIndex);
                         t = Avx2.GatherVector128(chunk, idx, 4);
                     }
                     else
@@ -440,7 +374,7 @@ namespace ParallelCryptography
             state[4] = Sse2.Add(e, state[4]);
         }
 
-        private static void ProcessBlock(Span<uint> state, Span<uint> chunk)
+        private static void ProcessBlockSHA1(Span<uint> state, Span<uint> chunk)
         {
             uint a, b, c, d, e;
             int idx;
@@ -523,99 +457,6 @@ namespace ParallelCryptography
             var tmp = Sse2.ShiftLeftLogical(vec, 30);
             vec = Sse2.ShiftRightLogical(vec, 32 - 30);
             return Sse2.Or(tmp, vec);
-        }
-
-        private static void ExtractHashFromState(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
-        {
-            Debug.Assert(state.Length == 5);
-            Debug.Assert(hash.Length == 5);
-            Debug.Assert(hashIdx < 5);
-
-            ref uint stateRef = ref Unsafe.As<Vector128<uint>, uint>(ref MemoryMarshal.GetReference(state));
-            hash[0] = Unsafe.Add(ref stateRef, hashIdx);
-            hash[1] = Unsafe.Add(ref stateRef, 4 + hashIdx);
-            hash[2] = Unsafe.Add(ref stateRef, 4 * 2 + hashIdx);
-            hash[3] = Unsafe.Add(ref stateRef, 4 * 3 + hashIdx);
-            hash[4] = Unsafe.Add(ref stateRef, 4 * 4 + hashIdx);
-        }
-
-        [StructLayout(LayoutKind.Auto)]
-        private struct SHA1DataContext
-        {
-            byte[] _data;
-            int _dataidx;
-            ulong _bitsize;
-            bool appended;
-
-            public bool Complete { get; private set; }
-
-            public SHA1DataContext(byte[] data)
-            {
-                _data = data;
-                _bitsize = data == null ? 0 : (ulong)data.Length * 8;
-                _dataidx = 0;
-                appended = false;
-                Complete = false;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-            public void PrepareBlock(Span<byte> span)
-            {
-                Debug.Assert(span.Length == 64);
-
-                int len = Math.Min(span.Length, Length() - _dataidx);
-
-                if (len == 0)
-                {
-                    span.Clear();
-
-                    if (!appended)
-                    {
-                        span[0] = 0x80;
-                        appended = true;
-                    }
-
-                    WriteBitsize(span);
-                    Complete = true;
-                    return;
-                }
-
-                _data.AsSpan(_dataidx, len).CopyTo(span);
-                _dataidx += len;
-
-                if (len != 64)
-                {
-                    span.Slice(len).Clear();
-                }
-
-                if (_dataidx == _data.Length)
-                {
-                    int spaceLeft = span.Length - len;
-
-                    if (spaceLeft > 0)
-                    {
-                        span[len] = 0x80;
-                        appended = true;
-
-                        if (spaceLeft - 1 >= 8)
-                        {
-                            WriteBitsize(span);
-                            Complete = true;
-                        }
-                    }
-                }
-            }
-
-            private int Length()
-            {
-                return _data?.Length ?? 0;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void WriteBitsize(Span<byte> span)
-            {
-                Unsafe.As<byte, ulong>(ref span[span.Length - 8]) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
-            }
         }
     }
 }
