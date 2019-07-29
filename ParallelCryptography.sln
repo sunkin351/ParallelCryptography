@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29001.49
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ParallelCryptography", "ParallelCryptography\ParallelCryptography.csproj", "{46395B4E-C153-4574-8C84-6B227FA1059C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParallelCryptography", "ParallelCryptography\ParallelCryptography.csproj", "{46395B4E-C153-4574-8C84-6B227FA1059C}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParallelCryptography.Tests", "ParallelCryptographyTests\ParallelCryptography.Tests.csproj", "{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{46395B4E-C153-4574-8C84-6B227FA1059C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{46395B4E-C153-4574-8C84-6B227FA1059C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{46395B4E-C153-4574-8C84-6B227FA1059C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
