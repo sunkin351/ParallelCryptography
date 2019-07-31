@@ -3,9 +3,6 @@ using System.Text;
 using Xunit;
 using System.Threading;
 
-using ParallelCryptography;
-
-
 namespace ParallelCryptography.Tests
 {
     public class MainHashFunctionTests
@@ -31,13 +28,8 @@ namespace ParallelCryptography.Tests
         [Fact]
         public void SHA256()
         {
-            var hasharray = HashFunctions.SHA256(null);
-
-            Assert.NotNull(hasharray);
-
-            string hash = MakeHashString(hasharray);
-
-            Assert.Equal(SHA256Empty, hash);
+            var hash = HashFunctions.SHA256(null);
+            Assert.Equal(SHA256Empty, MakeHashString(hash));
         }
 
         private static string MakeHashString(byte[] hash)
