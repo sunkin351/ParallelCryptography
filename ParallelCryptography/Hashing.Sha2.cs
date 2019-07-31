@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -283,34 +283,16 @@ namespace ParallelCryptography
         {
             if (BitConverter.IsLittleEndian)
             {
-                for (int i = 0; i < 16; i += 4)
-                {
-                    if (Ssse3.IsSupported)
-                    {
-                        ref Vector128<uint> tmp = ref Unsafe.As<uint, Vector128<uint>>(ref chunk[i]);
-                        tmp = Ssse3.Shuffle(tmp.AsByte(), EndianessReverseShuffleConstant).AsUInt32();
-                    }
-                    else
-                    {
-                        chunk[i] = BinaryPrimitives.ReverseEndianness(chunk[i]);
-                        chunk[i + 1] = BinaryPrimitives.ReverseEndianness(chunk[i + 1]);
-                        chunk[i + 2] = BinaryPrimitives.ReverseEndianness(chunk[i + 2]);
-                        chunk[i + 3] = BinaryPrimitives.ReverseEndianness(chunk[i + 3]);
-                    }
-                }
+                ReverseEndianess(chunk.Slice(0, 16));
             }
 
             for (int i = 16; i < 64; ++i)
             {
                 var tmp = chunk[i - 15];
-                var s0 = BitOperations.RotateRight(tmp, 7)
-                    ^ BitOperations.RotateRight(tmp, 18)
-                    ^ BitOperations.RotateRight(tmp, 3);
+                var s0 = BitOperations.RotateRight(tmp, 7) ^ BitOperations.RotateRight(tmp, 18) ^ (tmp >> 3);
 
                 tmp = chunk[i - 2];
-                var s1 = BitOperations.RotateRight(tmp, 17)
-                    ^ BitOperations.RotateRight(tmp, 19)
-                    ^ BitOperations.RotateRight(tmp, 10);
+                var s1 = BitOperations.RotateRight(tmp, 17) ^ BitOperations.RotateRight(tmp, 19) ^ (tmp >> 10);
 
                 chunk[i] = chunk[i - 16] + s0 + chunk[i - 7] + s1;
             }
