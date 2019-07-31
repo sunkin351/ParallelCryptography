@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -177,11 +177,11 @@ namespace ParallelCryptography
 
             for (int i = 0; i < 64; ++i)
             {
-                var S1 = BitOperations.RotateRight(e, 6) ^ BitOperations.RotateRight(e, 11) ^ BitOperations.RotateRight(e, 25);
                 var ch = (e & f) ^ (~e & g);
-                var tmp1 = h + S1 + ch + SHA256TableK[i] + schedule[i];
-                var S0 = BitOperations.RotateRight(a, 2) ^ BitOperations.RotateRight(a, 13) ^ BitOperations.RotateRight(a, 22);
                 var maj = (a & b) ^ (a & c) ^ (b & c);
+                var S1 = BitOperations.RotateRight(e, 6) ^ BitOperations.RotateRight(e, 11) ^ BitOperations.RotateRight(e, 25);
+                var S0 = BitOperations.RotateRight(a, 2) ^ BitOperations.RotateRight(a, 13) ^ BitOperations.RotateRight(a, 22);
+                var tmp1 = h + S1 + ch + SHA256TableK[i] + schedule[i];
                 var tmp2 = S0 + maj;
 
                 h = g;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -149,18 +149,16 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitScheduleSHA1(Span<uint> chunk)
+        private static unsafe void InitScheduleSHA1(Span<uint> schedule)
         {
-            Debug.Assert(chunk.Length == 80);
-
             if (BitConverter.IsLittleEndian)
             {
-                ReverseEndianess(chunk.Slice(0, 16));
+                ReverseEndianess(schedule.Slice(0, 16));
             }
 
             if (Sse2.IsSupported)
             {
-                fixed (uint* dest = chunk)
+                fixed (uint* dest = schedule)
                 {
                     int i = 16;
 
@@ -214,7 +212,7 @@ namespace ParallelCryptography
             {
                 for (int i = 16; i < 80; ++i)
                 {
-                    chunk[i] = BitOperations.RotateLeft(chunk[i - 3] ^ chunk[i - 8] ^ chunk[i - 14] ^ chunk[i - 16], 1);
+                    schedule[i] = BitOperations.RotateLeft(schedule[i - 3] ^ schedule[i - 8] ^ schedule[i - 14] ^ schedule[i - 16], 1);
                 }
             }
         }
