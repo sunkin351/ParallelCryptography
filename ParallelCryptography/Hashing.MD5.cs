@@ -28,9 +28,9 @@ namespace ParallelCryptography
             state[2] = 0x98badcfe;
             state[3] = 0x10325476;
 
-            uint[] scheduleMemory = PooledMemory.Rent(16);
+            var scheduleMemory = MemoryPool.Rent(16);
 
-            Span<uint> schedule = scheduleMemory.AsSpan(0, 16);
+            Span<uint> schedule = scheduleMemory.Memory.Span;
 
             do
             {
@@ -39,6 +39,8 @@ namespace ParallelCryptography
                 ProcessBlockMD5(state, schedule);
             }
             while (!ctx.Complete);
+
+            scheduleMemory.Dispose();
 
             return hash;
         }
@@ -73,8 +75,8 @@ namespace ParallelCryptography
             state[2] = Vector128.Create(0x98badcfeu);
             state[3] = Vector128.Create(0x10325476u);
 
-            uint[] scheduleMemory = PooledMemory.Rent(16 * 4);
-            Span<uint> schedule = scheduleMemory.AsSpan(0, 16 * 4);
+            var scheduleMemory = MemoryPool.Rent(16 * 4);
+            Span<uint> schedule = scheduleMemory.Memory.Span;
 
             int concurrentHashes;
 
@@ -130,7 +132,7 @@ namespace ParallelCryptography
                 while (!ctx.Complete);
             }
 
-            PooledMemory.Return(scheduleMemory);
+            scheduleMemory.Dispose();
 
             return hashes;
         }

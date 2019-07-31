@@ -89,7 +89,7 @@ namespace ParallelCryptography
 
 
         //SHA1 statics
-        private static readonly ArrayPool<uint> PooledMemory = ArrayPool<uint>.Create();
+        private static readonly MemoryPool<uint> MemoryPool = MemoryPool<uint>.Shared;
 
         private static readonly Vector128<int> SHA1GatherIndex = Vector128.Create(0, 80, 80 * 2, 80 * 3);
         private static readonly Vector128<byte> EndianessReverseShuffleConstant = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);

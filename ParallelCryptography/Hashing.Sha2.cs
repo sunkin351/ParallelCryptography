@@ -28,8 +28,9 @@ namespace ParallelCryptography
             state[6] = 0x1f83d9ab;
             state[7] = 0x5be0cd19;
 
-            uint[] chunkMemory = PooledMemory.Rent(64);
-            Span<uint> schedule = chunkMemory.AsSpan(0, 64);
+            var scheduleMemory = MemoryPool.Rent(64);
+            Span<uint> schedule = scheduleMemory.Memory.Span;
+
             Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(schedule.Slice(0, 16));
 
             Debug.Assert(dataPortion.Length == 64);
@@ -42,7 +43,7 @@ namespace ParallelCryptography
             }
             while (!ctx.Complete);
 
-            PooledMemory.Return(chunkMemory);
+            scheduleMemory.Dispose();
 
             if (BitConverter.IsLittleEndian)
             {
@@ -69,8 +70,8 @@ namespace ParallelCryptography
             contexts[2] = new SHADataContext(data3);
             contexts[3] = new SHADataContext(data4);
 
-            uint[] scheduleMemory = PooledMemory.Rent(64 * 4);
-            Span<uint> schedule = scheduleMemory.AsSpan(0, 64 * 4);
+            var scheduleMemory = MemoryPool.Rent(64 * 4);
+            Span<uint> schedule = scheduleMemory.Memory.Span;
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 8);
 
             state[0] = Vector128.Create(0x6a09e667u);
@@ -147,7 +148,7 @@ namespace ParallelCryptography
                 } while (!ctx.Complete);
             }
 
-            PooledMemory.Return(scheduleMemory);
+            scheduleMemory.Dispose();
 
             if (BitConverter.IsLittleEndian)
             {
