@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
-using System.Numerics;
 
 namespace ParallelCryptography
 {
@@ -13,11 +12,6 @@ namespace ParallelCryptography
 
         public static byte[] MD5(byte[] data)
         {
-            if (!BitConverter.IsLittleEndian)
-            {
-                throw new NotSupportedException("Big Endian computing not supported by this MD5 implementation");
-            }
-
             SHADataContext ctx = new SHADataContext(data);
 
             byte[] hash = new byte[sizeof(uint) * 4];
@@ -36,11 +30,21 @@ namespace ParallelCryptography
             {
                 ctx.PrepareBlock(MemoryMarshal.Cast<uint, byte>(schedule));
 
+                if (!BitConverter.IsLittleEndian)
+                {
+                    ReverseEndianess(schedule);
+                }
+
                 ProcessBlockMD5(state, schedule);
             }
             while (!ctx.Complete);
 
             scheduleMemory.Dispose();
+
+            if (!BitConverter.IsLittleEndian)
+            {
+                ReverseEndianess(state);
+            }
 
             return hash;
         }
