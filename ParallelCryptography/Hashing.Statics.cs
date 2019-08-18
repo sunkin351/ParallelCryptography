@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -55,12 +55,13 @@ namespace ParallelCryptography
 
         private static void ExtractHashFromState(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
         {
-            Debug.Assert(state.Length == hash.Length);
             Debug.Assert((uint)hashIdx < 4u, "'hashIdx' is outside the acceptable range");
 
             Span<uint> stateScalar = MemoryMarshal.Cast<Vector128<uint>, uint>(state);
 
-            for (int i = 0; i < hash.Length; ++i)
+            var length = Math.Min(hash.Length, state.Length);
+
+            for (int i = 0; i < length; ++i)
             {
                 hash[i] = stateScalar[4 * i + hashIdx];
             }
