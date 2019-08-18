@@ -80,6 +80,18 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.SHA256Parallel(null, null, null, null);
         }
 
+        [Benchmark]
+        public byte[] SHA224_SingleHash_EmptyInput()
+        {
+            return HashFunctions.SHA224(null);
+        }
+
+        [Benchmark]
+        public byte[][] SHA224_MultiHash_EmptyInput()
+        {
+            return HashFunctions.SHA224Parallel(null, null, null, null);
+        }
+
         static void Main(string[] args)
         {
             BenchmarkRunner.Run<HashAlgorithmBenchmarks>();
