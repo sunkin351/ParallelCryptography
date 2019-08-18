@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Security.Cryptography;
-using BenchmarkDotNet;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 
 namespace ParallelCryptography.Benchmarks
 {
-    public class BenchmarkClass
+    public class HashAlgorithmBenchmarks
     {
         MD5 NativeMD5;
         SHA1 NativeSHA1;
@@ -83,7 +82,7 @@ namespace ParallelCryptography.Benchmarks
 
         static void Main(string[] args)
         {
-            BenchmarkRunner.Run<BenchmarkClass>();
+            BenchmarkRunner.Run<HashAlgorithmBenchmarks>();
         }
     }
 }
