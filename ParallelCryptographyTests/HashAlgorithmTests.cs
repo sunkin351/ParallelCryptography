@@ -1,11 +1,10 @@
-using System;
 using System.Text;
-using Xunit;
 using System.Threading;
+using Xunit;
 
 namespace ParallelCryptography.Tests
 {
-    public class MainHashFunctionTests
+    public class HashAlgorithmTests
     {
         const string MD5Empty = "d41d8cd98f00b204e9800998ecf8427e";
         const string SHA1Empty = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
