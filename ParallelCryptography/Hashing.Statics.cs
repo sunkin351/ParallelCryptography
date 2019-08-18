@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -11,23 +11,35 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ReverseEndianess(Span<uint> span)
         {
-            if (Ssse3.IsSupported && span.Length % 4 == 0)
+            int i = 0;
+
+            if (Ssse3.IsSupported && span.Length >= 4)
             {
                 var vecSpan = MemoryMarshal.Cast<uint, Vector128<uint>>(span);
-                for(int i = 0; i < vecSpan.Length; ++i)
+                for (; i < vecSpan.Length; ++i)
                 {
                     vecSpan[i] = Ssse3.Shuffle(vecSpan[i].AsByte(), EndianessReverseShuffleConstant).AsUInt32();
                 }
+
+                if ((span.Length & 3) == 0)
+                    return;
+
+                i *= 4;
             }
-            else
+
+            for (; i < span.Length; ++i)
             {
-                for (int i = 0; i < span.Length; ++i)
-                {
-                    span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
-                }
+                span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
+            }
+        }
+
+        private static void ReverseEndianess(Span<ulong> span)
+        {
+            for(int i = 0; i < span.Length; ++i)
+            {
+                span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
             }
         }
 
