@@ -148,7 +148,7 @@ namespace ParallelCryptography
             [MethodImpl(MethodImplOptions.AggressiveOptimization)]
             public void PrepareBlock(Span<byte> span)
             {
-                Debug.Assert(span.Length == 64);
+                Debug.Assert(span.Length == 64 || span.Length == 128);
 
                 int len = Math.Min(span.Length, Length() - _dataidx);
 
@@ -170,7 +170,7 @@ namespace ParallelCryptography
                 _data.AsSpan(_dataidx, len).CopyTo(span);
                 _dataidx += len;
 
-                if (len != 64)
+                if (len != span.Length)
                 {
                     span.Slice(len).Clear();
                 }

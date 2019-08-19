@@ -8,8 +8,6 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
-        
-
         public static byte[] MD5(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
