@@ -32,8 +32,6 @@ namespace ParallelCryptography
 
             Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(schedule.Slice(0, 16));
 
-            Debug.Assert(dataPortion.Length == 64);
-
             do
             {
                 ctx.PrepareBlock(dataPortion);
