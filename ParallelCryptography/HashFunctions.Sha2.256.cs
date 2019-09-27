@@ -132,15 +132,15 @@ namespace ParallelCryptography
 
                 ExtractHashFromState(state, hash, i);
 
-                var dataBlock = MemoryMarshal.Cast<uint, byte>(block.Slice(0, 16));
+                var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
 
                 do
                 {
                     ctx.PrepareBlock(dataBlock);
 
-                    InitScheduleSHA1(block);
+                    InitScheduleSHA256(block);
 
-                    ProcessBlockSHA1(hash, block);
+                    ProcessBlockSHA256(hash, block);
 
                 } while (!ctx.Complete);
             }
