@@ -49,28 +49,42 @@ namespace ParallelCryptography.Tests
             Assert.Equal(SHA512Empty, MakeHashString(hash));
         }
 
-        [Fact]
+        [Sse2IsSupportedFact]
         public void MD5Parallel()
         {
             ParallelTest(HashFunctions.MD5Parallel, HashFunctions.MD5);
         }
 
-        [Fact]
+        [Sse2IsSupportedFact]
         public void SHA1Parallel()
         {
             ParallelTest(HashFunctions.SHA1Parallel, HashFunctions.SHA1);
         }
 
-        [Fact]
+        [Sse2IsSupportedFact]
         public void Sha256Parallel()
         {
             ParallelTest(HashFunctions.SHA256Parallel, HashFunctions.SHA256);
         }
 
-        [Fact]
+        [Sse2IsSupportedFact]
         public void Sha224Parallel()
         {
             ParallelTest(HashFunctions.SHA224Parallel, HashFunctions.SHA224);
+        }
+
+        [Sse2IsSupportedFact]
+        public void Sha512Parallel_2()
+        {
+            Func<byte[], byte[], byte[][]> parallel = HashFunctions.Sha512Parallel;
+            ParallelTest(parallel, HashFunctions.Sha512);
+        }
+
+        [Avx2IsSupportedFact]
+        public void Sha512Parallel_4()
+        {
+            Func<byte[], byte[], byte[], byte[], byte[][]> parallel = HashFunctions.Sha512Parallel;
+            ParallelTest(parallel, HashFunctions.Sha512);
         }
 
         private static void ParallelTest(Func<byte[], byte[], byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
@@ -105,6 +119,30 @@ namespace ParallelCryptography.Tests
             Assert.Equal(scalar(arr2), res[1]);
             Assert.Equal(scalar(arr3), res[2]);
             Assert.Equal(scalar(arr4), res[3]);
+        }
+
+        private static void ParallelTest(Func<byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
+        {
+            var res = parallelHash(null, null);
+            var actual = scalar(null);
+
+            Assert.Equal(actual, res[0]);
+            Assert.Equal(actual, res[1]);
+
+            var rng = new Random();
+
+            byte[] arr1, arr2;
+
+            arr1 = new byte[127];
+            arr2 = new byte[255];
+
+            rng.NextBytes(arr1);
+            rng.NextBytes(arr2);
+
+            res = parallelHash(arr1, arr2);
+
+            Assert.Equal(scalar(arr1), res[0]);
+            Assert.Equal(scalar(arr2), res[1]);
         }
 
         private static string MakeHashString(byte[] hash)

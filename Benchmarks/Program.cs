@@ -5,6 +5,7 @@ using BenchmarkDotNet.Running;
 
 namespace ParallelCryptography.Benchmarks
 {
+    [CoreJob]
     public class HashAlgorithmBenchmarks
     {
         MD5 NativeMD5;
@@ -23,8 +24,6 @@ namespace ParallelCryptography.Benchmarks
             Sha1 = new SHA1Managed();
             Sha256 = new SHA256Managed();
         }
-
-
 
         [Benchmark]
         public byte[] Native_MD5_SingleHash_EmptyInput()
@@ -90,6 +89,24 @@ namespace ParallelCryptography.Benchmarks
         public byte[][] SHA224_MultiHash_EmptyInput()
         {
             return HashFunctions.SHA224Parallel(null, null, null, null);
+        }
+
+        [Benchmark]
+        public byte[] SHA512_SingleHash_EmptyInput()
+        {
+            return HashFunctions.Sha512(null);
+        }
+
+        [Benchmark(OperationsPerInvoke = 2)]
+        public byte[][] SHA512_MultiHash_2_EmptyInput()
+        {
+            return HashFunctions.Sha512Parallel(null, null);
+        }
+
+        [Benchmark(OperationsPerInvoke = 4)]
+        public byte[][] SHA512_MultiHash_4_EmptyInput()
+        {
+            return HashFunctions.Sha512Parallel(null, null, null, null);
         }
 
         static void Main(string[] args)

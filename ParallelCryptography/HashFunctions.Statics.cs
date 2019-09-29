@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -60,6 +60,34 @@ namespace ParallelCryptography
             Span<uint> stateScalar = MemoryMarshal.Cast<Vector128<uint>, uint>(state);
 
             var length = Math.Min(hash.Length, state.Length);
+
+            for (int i = 0; i < length; ++i)
+            {
+                hash[i] = stateScalar[4 * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashFromState(Span<Vector128<ulong>> state, Span<ulong> hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < 2u, "'hashIdx' is outside the acceptable range");
+
+            Span<ulong> stateScalar = MemoryMarshal.Cast<Vector128<ulong>, ulong>(state);
+
+            var length = Math.Min(state.Length, hash.Length);
+
+            for (int i = 0; i < length; ++i)
+            {
+                hash[i] = stateScalar[2 * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashFromState(Span<Vector256<ulong>> state, Span<ulong> hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < 4u, "'hashIdx' is outside the acceptable range");
+
+            Span<ulong> stateScalar = MemoryMarshal.Cast<Vector256<ulong>, ulong>(state);
+
+            var length = Math.Min(state.Length, hash.Length);
 
             for (int i = 0; i < length; ++i)
             {
@@ -148,6 +176,9 @@ namespace ParallelCryptography
             0x113f9804bef90dae, 0x1b710b35131c471b, 0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc,
             0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
         };
+
+        private static readonly Vector128<long> Sha512GatherIndex_128 = Vector128.Create(0, 80);
+        private static readonly Vector256<long> Sha512GatherIndex_256 = Vector256.Create(0, 80, 80 * 2, 80 * 3);
 
 
         [StructLayout(LayoutKind.Auto)]
