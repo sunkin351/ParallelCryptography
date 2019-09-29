@@ -38,7 +38,7 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.MD5(null);
         }
 
-        [Benchmark]
+        [Benchmark(OperationsPerInvoke = 4)]
         public byte[][] MD5_MultiHash_EmptyInput()
         {
             return HashFunctions.MD5Parallel(null, null, null, null);
@@ -56,7 +56,7 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.SHA1(null);
         }
 
-        [Benchmark]
+        [Benchmark(OperationsPerInvoke = 4)]
         public byte[][] SHA1_MultiHash_EmptyInput()
         {
             return HashFunctions.SHA1Parallel(null, null, null, null);
@@ -74,7 +74,7 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.SHA256(null);
         }
 
-        [Benchmark]
+        [Benchmark(OperationsPerInvoke = 4)]
         public byte[][] SHA256_MultiHash_EmptyInput()
         {
             return HashFunctions.SHA256Parallel(null, null, null, null);
@@ -86,7 +86,7 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.SHA224(null);
         }
 
-        [Benchmark]
+        [Benchmark(OperationsPerInvoke = 4)]
         public byte[][] SHA224_MultiHash_EmptyInput()
         {
             return HashFunctions.SHA224Parallel(null, null, null, null);
