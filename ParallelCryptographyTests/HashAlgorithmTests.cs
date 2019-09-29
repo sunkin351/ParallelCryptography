@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using System.Threading;
 using Xunit;
@@ -46,6 +47,64 @@ namespace ParallelCryptography.Tests
         {
             var hash = HashFunctions.Sha512(null);
             Assert.Equal(SHA512Empty, MakeHashString(hash));
+        }
+
+        [Fact]
+        public void MD5Parallel()
+        {
+            ParallelTest(HashFunctions.MD5Parallel, HashFunctions.MD5);
+        }
+
+        [Fact]
+        public void SHA1Parallel()
+        {
+            ParallelTest(HashFunctions.SHA1Parallel, HashFunctions.SHA1);
+        }
+
+        [Fact]
+        public void Sha256Parallel()
+        {
+            ParallelTest(HashFunctions.SHA256Parallel, HashFunctions.SHA256);
+        }
+
+        [Fact]
+        public void Sha224Parallel()
+        {
+            ParallelTest(HashFunctions.SHA224Parallel, HashFunctions.SHA224);
+        }
+
+        private static void ParallelTest(Func<byte[], byte[], byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
+        {
+            var res = parallelHash(null, null, null, null);
+            var actual = scalar(null);
+
+            Assert.Equal(actual, res[0]);
+
+            for (int i = 1; i < 4; ++i)
+            {
+                Assert.Equal(actual, res[i]);
+            }
+
+            var rng = new Random();
+
+            byte[] arr1, arr2, arr3, arr4;
+
+            arr1 = new byte[31];
+            arr2 = new byte[63];
+            arr3 = new byte[127];
+            arr4 = new byte[255];
+
+            rng.NextBytes(arr1);
+            rng.NextBytes(arr2);
+            rng.NextBytes(arr3);
+            rng.NextBytes(arr4);
+
+            res = parallelHash(arr1, arr2, arr3, arr4);
+
+            Assert.Equal(scalar(arr1), res[0]);
+            Assert.Equal(scalar(arr2), res[1]);
+            Assert.Equal(scalar(arr3), res[2]);
+            Assert.Equal(scalar(arr4), res[3]);
         }
 
         private static string MakeHashString(byte[] hash)

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -88,9 +89,13 @@ namespace ParallelCryptography
 
                 for (int i = 0; i < 4; ++i)
                 {
-                    Span<byte> span = MemoryMarshal.Cast<uint, byte>(schedule.Slice(i * 16, 16));
-                    ctxArr[i].PrepareBlock(span);
-                    concurrentHashes += ctxArr[i].Complete ? 0 : 1;
+                    ref SHADataContext ctx = ref ctxArr[i];
+
+                    if (ctx.Complete)
+                        continue;
+
+                    Span<byte> span = MemoryMarshal.AsBytes(schedule.Slice(i * 16, 16));
+                    ctx.PrepareBlock(span);
                 }
 
                 ProcessBlocksParallelMD5(state, schedule);
@@ -98,6 +103,11 @@ namespace ParallelCryptography
                 for (int i = 0; i < 4; ++i)
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
+
+                    if (!ctx.Complete)
+                    {
+                        concurrentHashes += 1;
+                    }
 
                     if (flags[i] != ctx.Complete)
                     {
@@ -121,7 +131,7 @@ namespace ParallelCryptography
                     continue;
 
                 Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-                Span<byte> asDataBlock = MemoryMarshal.Cast<uint, byte>(singleSchedule);
+                Span<byte> asDataBlock = MemoryMarshal.AsBytes(singleSchedule);
 
                 ExtractHashFromState(state, hash, i);
 
@@ -141,7 +151,6 @@ namespace ParallelCryptography
 
         private static void ProcessBlockMD5(Span<uint> state, Span<uint> schedule)
         {
-            int i = 0;
             uint a, b, c, d;
             uint f;
             int g;
@@ -150,7 +159,8 @@ namespace ParallelCryptography
             b = state[1];
             c = state[2];
             d = state[3];
-
+            
+            int i = 0;
             while (i < 16)
             {
                 f = (b & c) | (~b & d);
@@ -223,151 +233,217 @@ namespace ParallelCryptography
             d = state[3];
 
             fixed (uint* schedulePtr = schedule)
+            fixed (uint* tableK = MD5TableK)
+            fixed (int* shiftConstants = MD5ShiftConsts)
             {
                 int i = 0;
                 Vector128<int> g, b32 = Vector128.Create(32);
-                Vector128<uint> f, h;
+                Vector128<uint> f, h, t;
+
+                //while (i < 16)
+                //{
+                //    f = (b & c) | (~b & d);
+                //    g = i;
+
+                //    f += a + MD5TableK[i] + schedule[g];
+                //    a = d;
+                //    d = c;
+                //    c = b;
+                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
+
+                //    i += 1;
+                //}
 
                 while (i < 16)
                 {
+                    int idx = i;
+                    //f = (b & c) | (~b & d);
                     f = Sse2.AndNot(b, d);
                     f = Sse2.Or(f, Sse2.And(b, c));
 
-                    f = Sse2.Add(f, a);
-                    f = Sse2.Add(f, Vector128.Create(MD5TableK[i]));
-
+                    //f += a + MD5TableK[i] + schedule[g];
                     if (Avx2.IsSupported)
                     {
-                        g = Sse2.Add(Vector128.Create(i), MD5GatherIndex);
+                        g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
+                        t = Sse2.Add(a, t);
                     }
                     else
                     {
-                        h = Vector128.Create(schedulePtr[i], schedulePtr[16 + i], schedulePtr[16 * 2 + i], schedulePtr[16 * 3 + i]);
+                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
+                        h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
-                    f = Sse2.Add(f, h);
+                    t = Sse2.Add(t, h);
+                    f = Sse2.Add(f, t);
 
-                    g = Vector128.Create(MD5ShiftConsts[i]);
-                    h = Sse2.ShiftLeftLogical(f, g.AsUInt32());
-                    g = Sse2.Subtract(b32, g);
-                    f = Sse2.ShiftRightLogical(f, g.AsUInt32());
                     a = d;
                     d = c;
                     c = b;
-                    f = Sse2.Or(f, h);
-                    b = Sse2.Add(b, f);
+
+                    var vtmp = LeftRotate(f, shiftConstants[i]);
+                    b = Sse2.Add(b, vtmp);
 
                     i += 1;
                 }
+
+                //while (i < 32)
+                //{
+                //    f = (d & b) | (~d & c);
+                //    g = (5 * i + 1) & 15;
+
+                //    f += a + MD5TableK[i] + schedule[g];
+                //    a = d;
+                //    d = c;
+                //    c = b;
+                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
+
+                //    i += 1;
+                //}
 
                 while (i < 32)
                 {
-                    f = Sse2.Xor(b, c);
-                    f = Sse2.Xor(f, d);
-
-                    f = Sse2.Add(f, a);
-                    f = Sse2.Add(f, Vector128.Create(MD5TableK[i]));
-
                     int idx = (5 * i + 1) & 15;
+
+                    f = Sse2.And(d, b);
+                    f = Sse2.Or(f, Sse2.AndNot(d, c));
 
                     if (Avx2.IsSupported)
                     {
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
+                        t = Sse2.Add(a, t);
                         g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
                     }
                     else
                     {
+                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
-                    f = Sse2.Add(f, h);
+                    t = Sse2.Add(t, h);
+                    f = Sse2.Add(f, t);
 
-                    g = Vector128.Create(MD5ShiftConsts[i]);
-                    h = Sse2.ShiftLeftLogical(f, g.AsUInt32());
-                    g = Sse2.Subtract(b32, g);
-                    f = Sse2.ShiftRightLogical(f, g.AsUInt32());
                     a = d;
                     d = c;
                     c = b;
-                    f = Sse2.Or(f, h);
+
+                    f = LeftRotate(f, shiftConstants[i]);
                     b = Sse2.Add(b, f);
 
                     i += 1;
                 }
+
+                //while (i < 48)
+                //{
+                //    f = b ^ c ^ d;
+                //    g = (3 * i + 5) & 15;
+
+                //    f += a + MD5TableK[i] + schedule[g];
+                //    a = d;
+                //    d = c;
+                //    c = b;
+                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
+
+                //    i += 1;
+                //}
 
                 while (i < 48)
                 {
-                    f = Sse2.AndNot(d, c);
-                    f = Sse2.Or(f, Sse2.And(b, d));
-
-                    f = Sse2.Add(f, a);
-                    f = Sse2.Add(f, Vector128.Create(MD5TableK[i]));
-
                     int idx = (3 * i + 5) & 15;
+
+                    f = Sse2.Xor(b, c);
+                    f = Sse2.Xor(f, d);
 
                     if (Avx2.IsSupported)
                     {
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
+                        t = Sse2.Add(a, t);
                         g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
                     }
                     else
                     {
+                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
-                    f = Sse2.Add(f, h);
+                    t = Sse2.Add(t, h);
+                    f = Sse2.Add(f, t);
 
-                    g = Vector128.Create(MD5ShiftConsts[i]);
-                    h = Sse2.ShiftLeftLogical(f, g.AsUInt32());
-                    g = Sse2.Subtract(b32, g);
-                    f = Sse2.ShiftRightLogical(f, g.AsUInt32());
                     a = d;
                     d = c;
                     c = b;
-                    f = Sse2.Or(f, h);
+
+                    f = LeftRotate(f, shiftConstants[i]);
                     b = Sse2.Add(b, f);
 
                     i += 1;
                 }
+
+                //while (i < 64)
+                //{
+                //    f = c ^ (b | ~d);
+                //    g = (7 * i) & 15;
+
+                //    f += a + MD5TableK[i] + schedule[g];
+                //    a = d;
+                //    d = c;
+                //    c = b;
+                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
+
+                //    i += 1;
+                //}
 
                 while (i < 64)
                 {
-                    f = Sse2.Xor(d, AllBitsSet); //Bitwise NOT
+                    int idx = (7 * i) & 15;
+
+                    f = Sse2.Xor(d, AllBitsSet); //Bitwise NOT vector equivilant
                     f = Sse2.Or(f, b);
                     f = Sse2.Xor(f, c);
 
-                    f = Sse2.Add(f, a);
-                    f = Sse2.Add(f, Vector128.Create(MD5TableK[i]));
-
-                    int idx = (7 * i) & 15;
-
                     if (Avx2.IsSupported)
                     {
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
+                        t = Sse2.Add(a, t);
                         g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
                     }
                     else
                     {
+                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
-                    f = Sse2.Add(f, h);
+                    t = Sse2.Add(t, h);
+                    f = Sse2.Add(f, t);
 
-                    g = Vector128.Create(MD5ShiftConsts[i]);
-                    h = Sse2.ShiftLeftLogical(f, g.AsUInt32());
-                    g = Sse2.Subtract(b32, g);
-                    f = Sse2.ShiftRightLogical(f, g.AsUInt32());
                     a = d;
                     d = c;
                     c = b;
-                    f = Sse2.Or(f, h);
+
+                    f = LeftRotate(f, shiftConstants[i]);
                     b = Sse2.Add(b, f);
 
                     i += 1;
                 }
-
-                state[0] = Sse2.Add(a, state[0]);
-                state[1] = Sse2.Add(b, state[1]);
-                state[2] = Sse2.Add(c, state[2]);
-                state[3] = Sse2.Add(d, state[3]);
             }
+
+            state[0] = Sse2.Add(a, state[0]);
+            state[1] = Sse2.Add(b, state[1]);
+            state[2] = Sse2.Add(c, state[2]);
+            state[3] = Sse2.Add(d, state[3]);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe Vector128<uint> LeftRotate(Vector128<uint> vec, int count)
+        {
+            Vector128<uint> tmp, tmp2;
+
+            tmp = Vector128.CreateScalar(count).AsUInt32();
+            tmp2 = Vector128.CreateScalar(32 - count).AsUInt32();
+
+            tmp = Sse2.ShiftLeftLogical(vec, tmp);
+            tmp2 = Sse2.ShiftRightLogical(vec, tmp2);
+            return Sse2.Or(tmp, tmp2);
         }
     }
 }

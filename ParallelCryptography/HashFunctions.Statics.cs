@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -65,6 +65,10 @@ namespace ParallelCryptography
             {
                 hash[i] = stateScalar[4 * i + hashIdx];
             }
+        }
+
+        static HashFunctions()
+        {
         }
 
         private static readonly Vector128<uint> AllBitsSet = Vector128.Create(uint.MaxValue);
