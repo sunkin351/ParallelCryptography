@@ -125,7 +125,7 @@ namespace ParallelCryptography
                     continue;
                 }
 
-                Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
+                Span<uint> hash = new uint[8];
 
                 ExtractHashFromState(state, hash, i);
 
@@ -140,6 +140,8 @@ namespace ParallelCryptography
                     ProcessBlockSHA256(hash, block);
 
                 } while (!ctx.Complete);
+
+                MemoryMarshal.AsBytes(hash.Slice(0, 7)).CopyTo(hashes[i]);
             }
 
             scheduleMemory.Dispose();
