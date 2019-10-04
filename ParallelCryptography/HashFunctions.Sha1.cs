@@ -252,7 +252,10 @@ namespace ParallelCryptography
 
                             var vec = Avx2.GatherVector128(blockPtr, idx, 4);
 
-                            vec = Ssse3.Shuffle(vec.AsByte(), EndianessReverseShuffleConstant).AsUInt32();
+                            if (BitConverter.IsLittleEndian)
+                            {
+                                vec = Ssse3.Shuffle(vec.AsByte(), EndianessReverseShuffleConstant).AsUInt32();
+                            }
 
                             schedulePtr[i] = vec;
                         }
@@ -265,10 +268,20 @@ namespace ParallelCryptography
                         {
                             var tptr = scheduleptr + (i * 4);
 
-                            tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
-                            tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
-                            tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
-                            tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
+                            if (BitConverter.IsLittleEndian)
+                            {
+                                tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
+                                tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
+                                tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
+                                tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
+                            }
+                            else
+                            {
+                                tptr[0] = blockPtr[i];
+                                tptr[1] = blockPtr[i + 16];
+                                tptr[2] = blockPtr[i + 16 * 2];
+                                tptr[3] = blockPtr[i + 16 * 3];
+                            }
                         }
                     }
                 }
