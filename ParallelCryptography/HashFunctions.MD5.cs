@@ -81,12 +81,10 @@ namespace ParallelCryptography
             var scheduleMemory = MemoryPool.Rent(16 * 4);
             Span<uint> schedule = scheduleMemory.Memory.Span;
 
-            int concurrentHashes;
+            int concurrentHashes = 4;
 
             do
             {
-                concurrentHashes = 0;
-
                 for (int i = 0; i < 4; ++i)
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
@@ -104,11 +102,6 @@ namespace ParallelCryptography
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
 
-                    if (!ctx.Complete)
-                    {
-                        concurrentHashes += 1;
-                    }
-
                     if (flags[i] != ctx.Complete)
                     {
                         flags[i] = ctx.Complete;
@@ -116,10 +109,17 @@ namespace ParallelCryptography
                         Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
 
                         ExtractHashFromState(state, hash, i);
+
+                        concurrentHashes -= 1;
                     }
                 }
             }
             while (concurrentHashes > 2);
+
+            if (concurrentHashes == 0)
+            {
+                return hashes;
+            }
 
             Span<uint> singleSchedule = schedule.Slice(0, 16);
 
@@ -153,7 +153,6 @@ namespace ParallelCryptography
         {
             uint a, b, c, d;
             uint f;
-            int g;
 
             a = state[0];
             b = state[1];
@@ -164,9 +163,8 @@ namespace ParallelCryptography
             while (i < 16)
             {
                 f = (b & c) | (~b & d);
-                g = i;
 
-                f += a + MD5TableK[i] + schedule[g];
+                f += a + MD5TableK[i] + schedule[i];
                 a = d;
                 d = c;
                 c = b;
@@ -178,9 +176,8 @@ namespace ParallelCryptography
             while (i < 32)
             {
                 f = (d & b) | (~d & c);
-                g = (5 * i + 1) & 15;
 
-                f += a + MD5TableK[i] + schedule[g];
+                f += a + MD5TableK[i] + schedule[(5 * i + 1) & 15];
                 a = d;
                 d = c;
                 c = b;
@@ -192,9 +189,8 @@ namespace ParallelCryptography
             while (i < 48)
             {
                 f = b ^ c ^ d;
-                g = (3 * i + 5) & 15;
 
-                f += a + MD5TableK[i] + schedule[g];
+                f += a + MD5TableK[i] + schedule[(3 * i + 5) & 15];
                 a = d;
                 d = c;
                 c = b;
@@ -206,9 +202,8 @@ namespace ParallelCryptography
             while (i < 64)
             {
                 f = c ^ (b | ~d);
-                g = (7 * i) & 15;
 
-                f += a + MD5TableK[i] + schedule[g];
+                f += a + MD5TableK[i] + schedule[(7 * i) & 15];
                 a = d;
                 d = c;
                 c = b;
@@ -237,7 +232,7 @@ namespace ParallelCryptography
             fixed (int* shiftConstants = MD5ShiftConsts)
             {
                 int i = 0;
-                Vector128<int> g, b32 = Vector128.Create(32);
+                Vector128<int> g;
                 Vector128<uint> f, h, t;
 
                 //while (i < 16)
@@ -264,16 +259,17 @@ namespace ParallelCryptography
                     //f += a + MD5TableK[i] + schedule[g];
                     if (Avx2.IsSupported)
                     {
-                        g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
+                        g = Vector128.Create(idx);
+                        g = Sse2.Add(g, MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
                         t = Avx2.BroadcastScalarToVector128(tableK + i);
-                        t = Sse2.Add(a, t);
                     }
                     else
                     {
-                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
+                        t = Vector128.Create(tableK[i]);
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
+                    t = Sse2.Add(t, a);
                     t = Sse2.Add(t, h);
                     f = Sse2.Add(f, t);
 
@@ -310,16 +306,17 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        t = Avx2.BroadcastScalarToVector128(tableK + i);
-                        t = Sse2.Add(a, t);
-                        g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
+                        g = Vector128.Create(idx);
+                        g = Sse2.Add(g, MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
                     }
                     else
                     {
-                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
+                        t = Vector128.Create(tableK[i]);
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
+                    t = Sse2.Add(t, a);
                     t = Sse2.Add(t, h);
                     f = Sse2.Add(f, t);
 
@@ -356,16 +353,17 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        t = Avx2.BroadcastScalarToVector128(tableK + i);
-                        t = Sse2.Add(a, t);
-                        g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
+                        g = Vector128.Create(idx);
+                        g = Sse2.Add(g, MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
                     }
                     else
                     {
-                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
+                        t = Vector128.Create(tableK[i]);
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
+                    t = Sse2.Add(t, a);
                     t = Sse2.Add(t, h);
                     f = Sse2.Add(f, t);
 
@@ -403,16 +401,17 @@ namespace ParallelCryptography
 
                     if (Avx2.IsSupported)
                     {
-                        t = Avx2.BroadcastScalarToVector128(tableK + i);
-                        t = Sse2.Add(a, t);
-                        g = Sse2.Add(Vector128.Create(idx), MD5GatherIndex);
+                        g = Vector128.Create(idx);
+                        g = Sse2.Add(g, MD5GatherIndex);
                         h = Avx2.GatherVector128(schedulePtr, g, 4);
+                        t = Avx2.BroadcastScalarToVector128(tableK + i);
                     }
                     else
                     {
-                        t = Sse2.Add(a, Vector128.Create(tableK[i]));
+                        t = Vector128.Create(tableK[i]);
                         h = Vector128.Create(schedulePtr[idx], schedulePtr[16 + idx], schedulePtr[16 * 2 + idx], schedulePtr[16 * 3 + idx]);
                     }
+                    t = Sse2.Add(t, a);
                     t = Sse2.Add(t, h);
                     f = Sse2.Add(f, t);
 
