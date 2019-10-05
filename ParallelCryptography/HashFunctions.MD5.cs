@@ -52,12 +52,12 @@ namespace ParallelCryptography
         {
             if (!Sse2.IsSupported)
             {
-                throw new NotSupportedException("SSE2 instructions not available");
+                throw new NotSupportedException(SSE2_NotAvailable);
             }
 
             if (!BitConverter.IsLittleEndian)
             {
-                throw new NotSupportedException("Big Endian computing not supported by this MD5 implementation");
+                throw new NotSupportedException(BigEndian_NotSupported);
             }
 
             const int HashSize = sizeof(uint) * 4;

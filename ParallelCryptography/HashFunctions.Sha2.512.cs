@@ -52,7 +52,12 @@ namespace ParallelCryptography
         {
             if (!Sse2.IsSupported)
             {
-                throw new NotSupportedException("SSE2 instructions not available");
+                throw new NotSupportedException(SSE2_NotAvailable);
+            }
+
+            if (!BitConverter.IsLittleEndian)
+            {
+                throw new NotSupportedException(BigEndian_NotSupported);
             }
 
             Span<Vector128<ulong>> state = stackalloc Vector128<ulong>[8] 
@@ -78,12 +83,10 @@ namespace ParallelCryptography
 
             byte[][] hashes = AllocateHashs(2, sizeof(ulong) * 8);
 
-            int concurrentHashes, i;
+            int concurrentHashes = 4, i;
 
             do
             {
-                concurrentHashes = 0;
-
                 for (i = 0; i < 2; ++i)
                 {
                     ref SHADataContext ctx = ref contexts[i];
@@ -91,8 +94,6 @@ namespace ParallelCryptography
                     if (!ctx.Complete)
                     {
                         ctx.PrepareBlock(MemoryMarshal.AsBytes(schedule.Slice(i * 80, 16)));
-                        concurrentHashes += ctx.Complete ? 0 : 1;
-
                         InitScheduleSHA512(schedule.Slice(i * 80, 80));
                     }
                 }
@@ -110,48 +111,50 @@ namespace ParallelCryptography
                         Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
 
                         ExtractHashFromState(state, hash, i);
+
+                        concurrentHashes -= 1;
                     }
                 }
             }
-            while (concurrentHashes == 2);
+            while (concurrentHashes > 2);
 
-            Span<ulong> block = schedule.Slice(0, 80);
-
-            for (i = 0; i < 2; ++i)
+            if (concurrentHashes > 0)
             {
-                ref SHADataContext ctx = ref contexts[i];
+                Span<ulong> block = schedule.Slice(0, 80);
 
-                if (ctx.Complete)
+                for (i = 0; i < 2; ++i)
                 {
-                    continue;
+                    ref SHADataContext ctx = ref contexts[i];
+
+                    if (ctx.Complete)
+                    {
+                        continue;
+                    }
+
+                    Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
+
+                    ExtractHashFromState(state, hash, i);
+
+                    var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
+
+                    do
+                    {
+                        ctx.PrepareBlock(dataBlock);
+
+                        InitScheduleSHA512(block);
+
+                        ProcessBlockSHA512(hash, block);
+
+                    } while (!ctx.Complete);
                 }
-
-                Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                ExtractHashFromState(state, hash, i);
-
-                var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
-
-                do
-                {
-                    ctx.PrepareBlock(dataBlock);
-
-                    InitScheduleSHA512(block);
-
-                    ProcessBlockSHA512(hash, block);
-
-                } while (!ctx.Complete);
             }
 
             scheduleMemory.Dispose();
 
-            if (BitConverter.IsLittleEndian)
+            foreach (var hash in hashes)
             {
-                foreach (var hash in hashes)
-                {
-                    Span<ulong> hashSpan = MemoryMarshal.Cast<byte, ulong>(hash);
-                    ReverseEndianess(hashSpan);
-                }
+                Span<ulong> hashSpan = MemoryMarshal.Cast<byte, ulong>(hash);
+                ReverseEndianess(hashSpan);
             }
 
             return hashes;
@@ -161,7 +164,12 @@ namespace ParallelCryptography
         {
             if (!Avx2.IsSupported)
             {
-                throw new NotSupportedException("SSE2 instructions not available");
+                throw new NotSupportedException(SSE2_NotAvailable);
+            }
+
+            if (!BitConverter.IsLittleEndian)
+            {
+                throw new NotSupportedException(BigEndian_NotSupported);
             }
 
             Span<Vector256<ulong>> state = stackalloc Vector256<ulong>[8]
@@ -189,12 +197,10 @@ namespace ParallelCryptography
 
             byte[][] hashes = AllocateHashs(4, sizeof(ulong) * 8);
 
-            int concurrentHashes, i;
+            int concurrentHashes = 4, i;
 
             do
             {
-                concurrentHashes = 0;
-
                 for (i = 0; i < 4; ++i)
                 {
                     ref SHADataContext ctx = ref contexts[i];
@@ -202,8 +208,6 @@ namespace ParallelCryptography
                     if (!ctx.Complete)
                     {
                         ctx.PrepareBlock(MemoryMarshal.AsBytes(schedule.Slice(i * 80, 16)));
-                        concurrentHashes += ctx.Complete ? 0 : 1;
-
                         InitScheduleSHA512(schedule.Slice(i * 80, 80));
                     }
                 }
@@ -221,37 +225,42 @@ namespace ParallelCryptography
                         Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
 
                         ExtractHashFromState(state, hash, i);
+
+                        concurrentHashes -= 1;
                     }
                 }
             }
             while (concurrentHashes > 2);
 
-            Span<ulong> block = schedule.Slice(0, 80);
-
-            for (i = 0; i < 4; ++i)
+            if (concurrentHashes > 0)
             {
-                ref SHADataContext ctx = ref contexts[i];
+                Span<ulong> block = schedule.Slice(0, 80);
 
-                if (ctx.Complete)
+                for (i = 0; i < 4; ++i)
                 {
-                    continue;
+                    ref SHADataContext ctx = ref contexts[i];
+
+                    if (ctx.Complete)
+                    {
+                        continue;
+                    }
+
+                    Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
+
+                    ExtractHashFromState(state, hash, i);
+
+                    var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
+
+                    do
+                    {
+                        ctx.PrepareBlock(dataBlock);
+
+                        InitScheduleSHA512(block);
+
+                        ProcessBlockSHA512(hash, block);
+
+                    } while (!ctx.Complete);
                 }
-
-                Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                ExtractHashFromState(state, hash, i);
-
-                var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
-
-                do
-                {
-                    ctx.PrepareBlock(dataBlock);
-
-                    InitScheduleSHA512(block);
-
-                    ProcessBlockSHA512(hash, block);
-
-                } while (!ctx.Complete);
             }
 
             scheduleMemory.Dispose();
