@@ -11,6 +11,12 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
+        //Error Messages
+        const string SSE2_NotAvailable = "SSE2 instructions not available";
+        const string AVX2_NotAvailable = "AVX2 instructions not available";
+
+        const string BigEndian_NotSupported = "Big Endian architecture not supported by this library.";
+
         private static void ReverseEndianess(Span<uint> span)
         {
             int i = 0;
