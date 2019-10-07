@@ -101,10 +101,6 @@ namespace ParallelCryptography
             }
         }
 
-        static HashFunctions()
-        {
-        }
-
         private static readonly Vector128<uint> AllBitsSet = Vector128.Create(uint.MaxValue);
 
         //MD5 statics
@@ -163,7 +159,7 @@ namespace ParallelCryptography
 
         private static readonly Vector128<int> Sha256GatherIndex = Vector128.Create(0, 64, 64 * 2, 64 * 3);
 
-        private static readonly ulong[] SHA512TableK = new ulong[]
+        private static readonly ulong[] SHA512TableK = new ulong[80]
         {
             0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc, 0x3956c25bf348b538,
             0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118, 0xd807aa98a3030242, 0x12835b0145706fbe,
@@ -183,9 +179,17 @@ namespace ParallelCryptography
             0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
         };
 
-        private static readonly Vector128<long> Sha512GatherIndex_128 = Vector128.Create(0, 80);
-        private static readonly Vector256<long> Sha512GatherIndex_256 = Vector256.Create(0, 80, 80 * 2, 80 * 3);
+        private static readonly Vector128<long> Sha512GatherIndex_128 = Vector128.Create(0, 16);
+        private static readonly Vector256<long> Sha512GatherIndex_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3);
 
+        private static readonly Vector128<byte> Sha512ReverseEndianess_128;
+        private static readonly Vector256<byte> Sha512ReverseEndianess_256;
+
+        static HashFunctions()
+        {
+            Sha512ReverseEndianess_128 = Vector128.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
+            Sha512ReverseEndianess_256 = Vector256.Create(Sha512ReverseEndianess_128, Sha512ReverseEndianess_128);
+        }
 
         [StructLayout(LayoutKind.Auto)]
         private struct SHADataContext

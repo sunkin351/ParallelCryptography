@@ -154,6 +154,7 @@ namespace ParallelCryptography
                 }
             }
 
+            blockMemory.Dispose();
             scheduleMemory.Dispose();
 
             foreach (var hash in hashes)
