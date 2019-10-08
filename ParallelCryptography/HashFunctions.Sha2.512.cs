@@ -28,9 +28,7 @@ namespace ParallelCryptography
                 0x5be0cd19137e2179
             };
 
-            var scheduleMemory = MemoryPool<ulong>.Shared.Rent(80);
-            Span<ulong> schedule = scheduleMemory.Memory.Span;
-
+            Span<ulong> schedule = stackalloc ulong[80];
             Span<byte> dataPortion = MemoryMarshal.AsBytes(schedule.Slice(0, 16));
 
             do
@@ -73,17 +71,16 @@ namespace ParallelCryptography
                 Vector128.Create(0x5be0cd19137e2179u),
             };
 
+            Span<ulong> blocks = stackalloc ulong[16 * 2];
+
+            Span<Vector128<ulong>> schedule = stackalloc Vector128<ulong>[80];
+
             Span<bool> flags = stackalloc bool[2];
+
             SHADataContext[] contexts = new SHADataContext[2];
 
             contexts[0] = new SHADataContext(data1);
             contexts[1] = new SHADataContext(data2);
-
-            var scheduleMemory = MemoryPool<ulong>.Shared.Rent(80 * 2);
-            var blockMemory = MemoryPool<ulong>.Shared.Rent(16 * 2);
-
-            Span<Vector128<ulong>> schedule = MemoryMarshal.Cast<ulong, Vector128<ulong>>(scheduleMemory.Memory.Span);
-            Span<ulong> blocks = blockMemory.Memory.Span;
 
             byte[][] hashes = AllocateHashs(2, sizeof(ulong) * 8);
 
@@ -125,7 +122,7 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<ulong> scalarSchedule = scheduleMemory.Memory.Span.Slice(0, 80);
+                Span<ulong> scalarSchedule = MemoryMarshal.Cast<Vector128<ulong>, ulong>(schedule).Slice(0, 80);
                 Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
 
                 for (i = 0; i < 2; ++i)
@@ -152,9 +149,6 @@ namespace ParallelCryptography
                     } while (!ctx.Complete);
                 }
             }
-
-            scheduleMemory.Dispose();
-            blockMemory.Dispose();
 
             foreach (var hash in hashes)
             {
@@ -189,6 +183,9 @@ namespace ParallelCryptography
                 Vector256.Create(0x5be0cd19137e2179u),
             };
 
+            Span<ulong> blocks = stackalloc ulong[16 * 4];
+            Span<Vector256<ulong>> schedule = stackalloc Vector256<ulong>[80];
+
             Span<bool> flags = stackalloc bool[4];
             SHADataContext[] contexts = new SHADataContext[4];
 
@@ -196,13 +193,7 @@ namespace ParallelCryptography
             contexts[1] = new SHADataContext(data2);
             contexts[2] = new SHADataContext(data3);
             contexts[3] = new SHADataContext(data4);
-
-            var blockMemory = MemoryPool<ulong>.Shared.Rent(16 * 4);
-            var scheduleMemory = MemoryPool<ulong>.Shared.Rent(80 * 4);
-
-            Span<ulong> blocks = blockMemory.Memory.Span;
-            Span<Vector256<ulong>> schedule = MemoryMarshal.Cast<ulong, Vector256<ulong>>(scheduleMemory.Memory.Span);
-
+            
             byte[][] hashes = AllocateHashs(4, sizeof(ulong) * 8);
 
             int concurrentHashes = 4, i;
@@ -243,7 +234,7 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<ulong> scalarSchedule = scheduleMemory.Memory.Span.Slice(0, 80);
+                Span<ulong> scalarSchedule = MemoryMarshal.Cast<Vector256<ulong>, ulong>(schedule).Slice(0, 80);
                 var dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
 
                 for (i = 0; i < 4; ++i)
@@ -270,9 +261,6 @@ namespace ParallelCryptography
                     } while (!ctx.Complete);
                 }
             }
-
-            blockMemory.Dispose();
-            scheduleMemory.Dispose();
 
             foreach (var hash in hashes)
             {
@@ -487,7 +475,7 @@ namespace ParallelCryptography
             }
         }
 
-        public static unsafe void InitScheduleSHA512(Span<ulong> schedule)
+        private static unsafe void InitScheduleSHA512(Span<ulong> schedule)
         {
             fixed (ulong* schedulePtr = schedule)
             {
@@ -512,7 +500,7 @@ namespace ParallelCryptography
             }
         }
 
-        public static unsafe void InitScheduleSHA512Parallel(Span<Vector128<ulong>> schedule, Span<ulong> block)
+        private static unsafe void InitScheduleSHA512Parallel(Span<Vector128<ulong>> schedule, Span<ulong> block)
         {
             fixed (Vector128<ulong>* schedulePtr = schedule)
             {
@@ -593,7 +581,7 @@ namespace ParallelCryptography
             }
         }
 
-        public static unsafe void InitScheduleSHA512Parallel(Span<Vector256<ulong>> schedule, Span<ulong> block)
+        private static unsafe void InitScheduleSHA512Parallel(Span<Vector256<ulong>> schedule, Span<ulong> block)
         {
             fixed (Vector256<ulong>* schedulePtr = schedule)
             {
