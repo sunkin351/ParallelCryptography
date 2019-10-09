@@ -58,24 +58,26 @@ namespace ParallelCryptography
 
             const int HashSize = sizeof(uint) * 4;
 
-            SHADataContext[] ctxArr = new SHADataContext[4];
-            ctxArr[0] = new SHADataContext(data1);
-            ctxArr[1] = new SHADataContext(data2);
-            ctxArr[2] = new SHADataContext(data3);
-            ctxArr[3] = new SHADataContext(data4);
+            SHADataContext[] ctxArr = new SHADataContext[4]
+            {
+                new SHADataContext(data1),
+                new SHADataContext(data2),
+                new SHADataContext(data3),
+                new SHADataContext(data4)
+            };
 
             byte[][] hashes = AllocateHashs(4, HashSize);
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[4];
+            Span<Vector128<uint>> state = stackalloc Vector128<uint>[4]
+            {
+                Vector128.Create(0x67452301u),
+                Vector128.Create(0xefcdab89u),
+                Vector128.Create(0x98badcfeu),
+                Vector128.Create(0x10325476u)
+            };
             Span<bool> flags = stackalloc bool[4];
 
-            state[0] = Vector128.Create(0x67452301u);
-            state[1] = Vector128.Create(0xefcdab89u);
-            state[2] = Vector128.Create(0x98badcfeu);
-            state[3] = Vector128.Create(0x10325476u);
-
-            var scheduleMemory = MemoryPool.Rent(16 * 4);
-            Span<uint> schedule = scheduleMemory.Memory.Span;
+            Span<uint> schedule = stackalloc uint[16 * 4];
 
             int concurrentHashes = 4;
 
@@ -112,35 +114,31 @@ namespace ParallelCryptography
             }
             while (concurrentHashes > 2);
 
-            if (concurrentHashes == 0)
+            if (concurrentHashes > 0)
             {
-                return hashes;
-            }
+                Span<uint> singleSchedule = schedule.Slice(0, 16);
 
-            Span<uint> singleSchedule = schedule.Slice(0, 16);
-
-            for (int i = 0; i < 4; ++i)
-            {
-                ref SHADataContext ctx = ref ctxArr[i];
-
-                if (ctx.Complete)
-                    continue;
-
-                Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-                Span<byte> asDataBlock = MemoryMarshal.AsBytes(singleSchedule);
-
-                ExtractHashFromState(state, hash, i);
-
-                do
+                for (int i = 0; i < 4; ++i)
                 {
-                    ctx.PrepareBlock(asDataBlock);
+                    ref SHADataContext ctx = ref ctxArr[i];
 
-                    ProcessBlockMD5(hash, singleSchedule);
+                    if (ctx.Complete)
+                        continue;
+
+                    Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
+                    Span<byte> asDataBlock = MemoryMarshal.AsBytes(singleSchedule);
+
+                    ExtractHashFromState(state, hash, i);
+
+                    do
+                    {
+                        ctx.PrepareBlock(asDataBlock);
+
+                        ProcessBlockMD5(hash, singleSchedule);
+                    }
+                    while (!ctx.Complete);
                 }
-                while (!ctx.Complete);
             }
-
-            scheduleMemory.Dispose();
 
             return hashes;
         }
@@ -231,20 +229,6 @@ namespace ParallelCryptography
                 Vector128<int> g;
                 Vector128<uint> f, h, t;
 
-                //while (i < 16)
-                //{
-                //    f = (b & c) | (~b & d);
-                //    g = i;
-
-                //    f += a + MD5TableK[i] + schedule[g];
-                //    a = d;
-                //    d = c;
-                //    c = b;
-                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
-
-                //    i += 1;
-                //}
-
                 while (i < 16)
                 {
                     int idx = i;
@@ -279,20 +263,6 @@ namespace ParallelCryptography
                     i += 1;
                 }
 
-                //while (i < 32)
-                //{
-                //    f = (d & b) | (~d & c);
-                //    g = (5 * i + 1) & 15;
-
-                //    f += a + MD5TableK[i] + schedule[g];
-                //    a = d;
-                //    d = c;
-                //    c = b;
-                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
-
-                //    i += 1;
-                //}
-
                 while (i < 32)
                 {
                     int idx = (5 * i + 1) & 15;
@@ -326,20 +296,6 @@ namespace ParallelCryptography
                     i += 1;
                 }
 
-                //while (i < 48)
-                //{
-                //    f = b ^ c ^ d;
-                //    g = (3 * i + 5) & 15;
-
-                //    f += a + MD5TableK[i] + schedule[g];
-                //    a = d;
-                //    d = c;
-                //    c = b;
-                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
-
-                //    i += 1;
-                //}
-
                 while (i < 48)
                 {
                     int idx = (3 * i + 5) & 15;
@@ -372,20 +328,6 @@ namespace ParallelCryptography
 
                     i += 1;
                 }
-
-                //while (i < 64)
-                //{
-                //    f = c ^ (b | ~d);
-                //    g = (7 * i) & 15;
-
-                //    f += a + MD5TableK[i] + schedule[g];
-                //    a = d;
-                //    d = c;
-                //    c = b;
-                //    b += BitOperations.RotateLeft(f, MD5ShiftConsts[i]);
-
-                //    i += 1;
-                //}
 
                 while (i < 64)
                 {
