@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -13,21 +13,19 @@ namespace ParallelCryptography
         {
             SHADataContext ctx = new SHADataContext(data);
 
-            byte[] hash = new byte[sizeof(uint) * 4];
+            Span<uint> state = stackalloc uint[4]
+            {
+                0x67452301,
+                0xefcdab89,
+                0x98badcfe,
+                0x10325476
+            };
 
-            Span<uint> state = MemoryMarshal.Cast<byte, uint>(hash);
-            state[0] = 0x67452301;
-            state[1] = 0xefcdab89;
-            state[2] = 0x98badcfe;
-            state[3] = 0x10325476;
-
-            var scheduleMemory = MemoryPool.Rent(16);
-
-            Span<uint> schedule = scheduleMemory.Memory.Span;
+            Span<uint> schedule = stackalloc uint[16];
 
             do
             {
-                ctx.PrepareBlock(MemoryMarshal.Cast<uint, byte>(schedule));
+                ctx.PrepareBlock(MemoryMarshal.AsBytes(schedule));
 
                 if (!BitConverter.IsLittleEndian)
                 {
@@ -38,14 +36,12 @@ namespace ParallelCryptography
             }
             while (!ctx.Complete);
 
-            scheduleMemory.Dispose();
-
             if (!BitConverter.IsLittleEndian)
             {
                 ReverseEndianess(state);
             }
 
-            return hash;
+            return MemoryMarshal.AsBytes(state).ToArray();
         }
 
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
