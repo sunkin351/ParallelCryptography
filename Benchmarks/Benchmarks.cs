@@ -11,6 +11,7 @@ namespace ParallelCryptography.Benchmarks
         MD5 NativeMD5;
         SHA1 NativeSHA1;
         SHA256 NativeSHA256;
+        SHA512 NativeSHA512;
 
         SHA1Managed Sha1;
         SHA256Managed Sha256;
@@ -21,6 +22,7 @@ namespace ParallelCryptography.Benchmarks
             NativeMD5 = MD5.Create();
             NativeSHA1 = SHA1.Create();
             NativeSHA256 = SHA256.Create();
+            NativeSHA512 = SHA512.Create();
             Sha1 = new SHA1Managed();
             Sha256 = new SHA256Managed();
         }
@@ -89,6 +91,12 @@ namespace ParallelCryptography.Benchmarks
         public byte[][] SHA224_MultiHash_EmptyInput()
         {
             return HashFunctions.SHA224Parallel(null, null, null, null);
+        }
+
+        [Benchmark]
+        public byte[] Native_SHA512_SingleHash_EmptyInput()
+        {
+            return NativeSHA512.ComputeHash(Array.Empty<byte>());
         }
 
         [Benchmark]
