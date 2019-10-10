@@ -117,6 +117,24 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.SHA512Parallel(null, null, null, null);
         }
 
+        [Benchmark]
+        public byte[] SHA384_SingleHash_EmptyInput()
+        {
+            return HashFunctions.SHA384(null);
+        }
+
+        [Benchmark(OperationsPerInvoke = 2)]
+        public byte[][] SHA384_MultiHash_2_EmptyInput()
+        {
+            return HashFunctions.SHA384Parallel(null, null);
+        }
+
+        [Benchmark(OperationsPerInvoke = 4)]
+        public byte[][] SHA384_MultiHash_4_EmptyInput()
+        {
+            return HashFunctions.SHA384Parallel(null, null, null, null);
+        }
+
         static void Main(string[] args)
         {
             BenchmarkRunner.Run<HashAlgorithmBenchmarks>();
