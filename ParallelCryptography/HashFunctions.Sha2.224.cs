@@ -12,23 +12,21 @@ namespace ParallelCryptography
         {
             SHADataContext ctx = new SHADataContext(data);
 
-            Span<uint> state = stackalloc uint[8];
+            Span<uint> state = stackalloc uint[8]
+            {
+                0xc1059ed8,
+                0x367cd507,
+                0x3070dd17,
+                0xf70e5939,
+                0xffc00b31,
+                0x68581511,
+                0x64f98fa7,
+                0xbefa4fa4
+            };
 
-            state[0] = 0xc1059ed8;
-            state[1] = 0x367cd507;
-            state[2] = 0x3070dd17;
-            state[3] = 0xf70e5939;
-            state[4] = 0xffc00b31;
-            state[5] = 0x68581511;
-            state[6] = 0x64f98fa7;
-            state[7] = 0xbefa4fa4;
-
-            var scheduleMemory = MemoryPool.Rent(64);
-            Span<uint> schedule = scheduleMemory.Memory.Span;
+            Span<uint> schedule = stackalloc uint[64];
 
             Span<byte> dataPortion = MemoryMarshal.AsBytes(schedule.Slice(0, 16));
-
-            Debug.Assert(dataPortion.Length == 64);
 
             do
             {
@@ -37,8 +35,6 @@ namespace ParallelCryptography
                 ProcessBlockSHA256(state, schedule);
             }
             while (!ctx.Complete);
-
-            scheduleMemory.Dispose();
 
             if (BitConverter.IsLittleEndian)
             {
@@ -60,27 +56,30 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[8];
+            Span<Vector128<uint>> state = stackalloc Vector128<uint>[8]
+            {
+                Vector128.Create(0xc1059ed8u),
+                Vector128.Create(0x367cd507u),
+                Vector128.Create(0x3070dd17u),
+                Vector128.Create(0xf70e5939u),
+                Vector128.Create(0xffc00b31u),
+                Vector128.Create(0x68581511u),
+                Vector128.Create(0x64f98fa7u),
+                Vector128.Create(0xbefa4fa4u)
+            };
+
             Span<bool> flags = stackalloc bool[4];
-            SHADataContext[] contexts = new SHADataContext[4];
+            SHADataContext[] contexts = new SHADataContext[4]
+            {
+                new SHADataContext(data1),
+                new SHADataContext(data2),
+                new SHADataContext(data3),
+                new SHADataContext(data4)
+            };
 
-            contexts[0] = new SHADataContext(data1);
-            contexts[1] = new SHADataContext(data2);
-            contexts[2] = new SHADataContext(data3);
-            contexts[3] = new SHADataContext(data4);
-
-            var scheduleMemory = MemoryPool.Rent(64 * 4);
-            Span<uint> schedule = scheduleMemory.Memory.Span;
+            Span<uint> blocks = stackalloc uint[16 * 4];
+            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[64];
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 7);
-
-            state[0] = Vector128.Create(0xc1059ed8u);
-            state[1] = Vector128.Create(0x367cd507u);
-            state[2] = Vector128.Create(0x3070dd17u);
-            state[3] = Vector128.Create(0xf70e5939u);
-            state[4] = Vector128.Create(0xffc00b31u);
-            state[5] = Vector128.Create(0x68581511u);
-            state[6] = Vector128.Create(0x64f98fa7u);
-            state[7] = Vector128.Create(0xbefa4fa4u);
 
             int concurrentHashes = 4, i;
 
@@ -92,10 +91,11 @@ namespace ParallelCryptography
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.AsBytes(schedule.Slice(i * 64, 16)));
-                        InitScheduleSHA256(schedule.Slice(i * 64, 64));
+                        ctx.PrepareBlock(MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16)));
                     }
                 }
+
+                InitScheduleSHA256Parallel(schedule, blocks);
 
                 ProcessBlocksParallelSHA256(state, schedule);
 
@@ -119,7 +119,9 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<uint> block = schedule.Slice(0, 64);
+                var dataBlock = MemoryMarshal.AsBytes(blocks.Slice(0, 16));
+
+                Span<uint> scalarState = new uint[8];
 
                 for (i = 0; i < 4; ++i)
                 {
@@ -130,27 +132,21 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    Span<uint> hash = new uint[8];
-
-                    ExtractHashFromState(state, hash, i);
-
-                    var dataBlock = MemoryMarshal.AsBytes(block.Slice(0, 16));
+                    ExtractHashFromState(state, scalarState, i);
 
                     do
                     {
                         ctx.PrepareBlock(dataBlock);
 
-                        InitScheduleSHA256(block);
+                        InitScheduleSHA256(blocks);
 
-                        ProcessBlockSHA256(hash, block);
+                        ProcessBlockSHA256(scalarState, blocks);
 
                     } while (!ctx.Complete);
 
-                    MemoryMarshal.AsBytes(hash.Slice(0, 7)).CopyTo(hashes[i]);
+                    MemoryMarshal.AsBytes(scalarState.Slice(0, 7)).CopyTo(hashes[i]);
                 }
             }
-
-            scheduleMemory.Dispose();
 
             foreach (var hash in hashes)
             {

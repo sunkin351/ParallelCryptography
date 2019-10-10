@@ -15,15 +15,17 @@ namespace ParallelCryptography
         {
             SHADataContext ctx = new SHADataContext(data);
 
-            byte[] hash = new byte[sizeof(uint) * 5];
+            Span<uint> state = stackalloc uint[5]
+            {
+                0x67452301,
+                0xEFCDAB89,
+                0x98BADCFE,
+                0x10325476,
+                0xC3D2E1F0
+            };
 
-            Span<uint> state = MemoryMarshal.Cast<byte, uint>(hash);
-
-            SHA1InitState.AsSpan().CopyTo(state);
-
-            var scheduleMemory = MemoryPool.Rent(80);
-            Span<uint> schedule = scheduleMemory.Memory.Span;
-            Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(schedule.Slice(0, 16));
+            Span<uint> schedule = stackalloc uint[80];
+            Span<byte> dataPortion = MemoryMarshal.AsBytes(schedule.Slice(0, 16));
 
             do
             {
@@ -33,14 +35,12 @@ namespace ParallelCryptography
             }
             while (!ctx.Complete);
 
-            scheduleMemory.Dispose();
-
             if (BitConverter.IsLittleEndian)
             {
                 ReverseEndianess(state);
             }
 
-            return hash;
+            return MemoryMarshal.AsBytes(state).ToArray();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -56,31 +56,27 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[5];
+            Span<Vector128<uint>> state = stackalloc Vector128<uint>[5]
+            {
+                Vector128.Create(0x67452301u),
+                Vector128.Create(0xEFCDAB89u),
+                Vector128.Create(0x98BADCFEu),
+                Vector128.Create(0x10325476u),
+                Vector128.Create(0xC3D2E1F0u)
+            };
+
             Span<bool> flags = stackalloc bool[4];
-            SHADataContext[] contexts = new SHADataContext[4];
-
-            contexts[0] = new SHADataContext(data1);
-            contexts[1] = new SHADataContext(data2);
-            contexts[2] = new SHADataContext(data3);
-            contexts[3] = new SHADataContext(data4);
-
-            const int blockSize = 16 * 4;
-            const int scheduleSize = 80 * 4;
-
-            var scheduleMemory = MemoryPool.Rent(scheduleSize);
-            var blockMemory = MemoryPool.Rent(blockSize);
-
-            Span<uint> block = blockMemory.Memory.Span;
-            Span<Vector128<uint>> schedule = MemoryMarshal.Cast<uint, Vector128<uint>>(scheduleMemory.Memory.Span);
+            SHADataContext[] contexts = new SHADataContext[4]
+            {
+                new SHADataContext(data1),
+                new SHADataContext(data2),
+                new SHADataContext(data3),
+                new SHADataContext(data4)
+            };
+            Span<uint> blocks = stackalloc uint[16 * 4];
+            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[80];
 
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 5);
-
-            state[0] = Vector128.Create(0x67452301u);
-            state[1] = Vector128.Create(0xEFCDAB89u);
-            state[2] = Vector128.Create(0x98BADCFEu);
-            state[3] = Vector128.Create(0x10325476u);
-            state[4] = Vector128.Create(0xC3D2E1F0u);
 
             int concurrentHashes = 4, i;
 
@@ -92,11 +88,11 @@ namespace ParallelCryptography
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.Cast<uint, byte>(block.Slice(i * 16, 16)));
+                        ctx.PrepareBlock(MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16)));
                     }
                 }
 
-                InitScheduleSHA1Parallel(schedule, block);
+                InitScheduleSHA1Parallel(schedule, blocks);
 
                 ProcessBlocksParallelSHA1(state, schedule);
 
@@ -120,8 +116,8 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                uint[] scalarSchedule = new uint[80];
-                Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.AsSpan(0, 16));
+                Span<uint> scalarSchedule = MemoryMarshal.Cast<Vector128<uint>, uint>(schedule).Slice(0, 80);
+                Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
 
                 for (i = 0; i < 4; ++i)
                 {
@@ -145,9 +141,6 @@ namespace ParallelCryptography
                     } while (!ctx.Complete);
                 }
             }
-
-            blockMemory.Dispose();
-            scheduleMemory.Dispose();
 
             //Hash byte order correction
             if (BitConverter.IsLittleEndian)
@@ -248,19 +241,14 @@ namespace ParallelCryptography
                 {
                     if (Avx2.IsSupported)
                     {
-                        var offsets = Vector128.Create(0, 16, 16 * 2, 16 * 3);
-
                         for (int i = 0; i < 16; ++i)
                         {
                             var idx = Vector128.Create(i);
-                            idx = Sse2.Add(idx, offsets);
+                            idx = Sse2.Add(idx, GatherIndex_32_128);
 
                             var vec = Avx2.GatherVector128(blockPtr, idx, 4);
 
-                            if (BitConverter.IsLittleEndian)
-                            {
-                                vec = Ssse3.Shuffle(vec.AsByte(), EndianessReverseShuffleConstant).AsUInt32();
-                            }
+                            vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
 
                             schedulePtr[i] = vec;
                         }
@@ -273,20 +261,10 @@ namespace ParallelCryptography
                         {
                             var tptr = scheduleptr + (i * 4);
 
-                            if (BitConverter.IsLittleEndian)
-                            {
-                                tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
-                                tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
-                                tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
-                                tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
-                            }
-                            else
-                            {
-                                tptr[0] = blockPtr[i];
-                                tptr[1] = blockPtr[i + 16];
-                                tptr[2] = blockPtr[i + 16 * 2];
-                                tptr[3] = blockPtr[i + 16 * 3];
-                            }
+                            tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
+                            tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
+                            tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
+                            tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
                         }
                     }
                 }

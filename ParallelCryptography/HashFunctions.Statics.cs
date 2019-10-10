@@ -26,7 +26,7 @@ namespace ParallelCryptography
                 var vecSpan = MemoryMarshal.Cast<uint, Vector128<uint>>(span);
                 for (; i < vecSpan.Length; ++i)
                 {
-                    vecSpan[i] = Ssse3.Shuffle(vecSpan[i].AsByte(), EndianessReverseShuffleConstant).AsUInt32();
+                    vecSpan[i] = Ssse3.Shuffle(vecSpan[i].AsByte(), ReverseEndianess_32_128).AsUInt32();
                 }
 
                 if ((span.Length & 3) == 0)
@@ -43,7 +43,22 @@ namespace ParallelCryptography
 
         private static void ReverseEndianess(Span<ulong> span)
         {
-            for(int i = 0; i < span.Length; ++i)
+            int i = 0;
+            if (Avx2.IsSupported && span.Length >= 4)
+            {
+                var vecSpan = MemoryMarshal.Cast<ulong, Vector256<ulong>>(span);
+                for (; i < vecSpan.Length; ++i)
+                {
+                    vecSpan[i] = Avx2.Shuffle(vecSpan[i].AsByte(), ReverseEndianess_64_256).AsUInt64();
+                }
+
+                if ((span.Length & 3) == 0)
+                    return;
+
+                i *= 4;
+            }
+
+            for (; i < span.Length; ++i)
             {
                 span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
             }
@@ -132,16 +147,8 @@ namespace ParallelCryptography
             6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21
         };
 
-        private static readonly Vector128<int> MD5GatherIndex = Vector128.Create(0, 16, 16 * 2, 16 * 3);
-
-
         //SHA1 statics
-        private static readonly MemoryPool<uint> MemoryPool = MemoryPool<uint>.Shared;
-
-        private static readonly Vector128<int> SHA1GatherIndex = Vector128.Create(0, 80, 80 * 2, 80 * 3);
-        private static readonly Vector128<byte> EndianessReverseShuffleConstant = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
         private static readonly Vector128<uint> LoadMask = Vector128.Create(uint.MaxValue, uint.MaxValue, uint.MaxValue, 0);
-        private static readonly uint[] SHA1InitState = new uint[5] { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
 
         //SHA2 statics
 
@@ -179,25 +186,29 @@ namespace ParallelCryptography
             0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
         };
 
-        private static readonly Vector128<long> Sha512GatherIndex_128 = Vector128.Create(0, 16);
-        private static readonly Vector256<long> Sha512GatherIndex_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3);
+        private static readonly Vector128<int> GatherIndex_32_128 = Vector128.Create(0, 16, 16 * 2, 16 * 3);
 
-        private static readonly Vector128<byte> Sha512ReverseEndianess_128;
-        private static readonly Vector256<byte> Sha512ReverseEndianess_256;
+        private static readonly Vector128<long> GatherIndex_64_128 = Vector128.Create(0, 16);
+        private static readonly Vector256<long> GatherIndex_64_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3);
+
+        private static readonly Vector128<byte> ReverseEndianess_32_128;
+        private static readonly Vector128<byte> ReverseEndianess_64_128;
+        private static readonly Vector256<byte> ReverseEndianess_64_256;
 
         static HashFunctions()
         {
-            Sha512ReverseEndianess_128 = Vector128.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
-            Sha512ReverseEndianess_256 = Vector256.Create(Sha512ReverseEndianess_128, Sha512ReverseEndianess_128);
+            ReverseEndianess_32_128 = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+            ReverseEndianess_64_128 = Vector128.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
+            ReverseEndianess_64_256 = Vector256.Create(ReverseEndianess_64_128, ReverseEndianess_64_128);
         }
 
         [StructLayout(LayoutKind.Auto)]
         private struct SHADataContext
         {
-            byte[] _data;
-            int _dataidx;
-            ulong _bitsize;
-            bool appended;
+            private readonly byte[] _data;
+            private readonly ulong _bitsize;
+            private int _dataidx;
+            private bool appended;
 
             public bool Complete { get; private set; }
 

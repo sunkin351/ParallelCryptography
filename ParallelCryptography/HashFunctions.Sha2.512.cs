@@ -511,11 +511,11 @@ namespace ParallelCryptography
                         for (int i = 0; i < 16; ++i)
                         {
                             var idx = Vector128.Create((long)i);
-                            idx = Sse2.Add(idx, Sha512GatherIndex_128);
+                            idx = Sse2.Add(idx, GatherIndex_64_128);
 
                             var vec = Avx2.GatherVector128(blockPtr, idx, 8);
 
-                            vec = Ssse3.Shuffle(vec.AsByte(), Sha512ReverseEndianess_128).AsUInt64();
+                            vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
 
                             schedulePtr[i] = vec;
                         }
@@ -590,11 +590,11 @@ namespace ParallelCryptography
                     for (int i = 0; i < 16; ++i)
                     {
                         var idx = Vector256.Create((long)i);
-                        idx = Avx2.Add(idx, Sha512GatherIndex_256);
+                        idx = Avx2.Add(idx, GatherIndex_64_256);
 
                         var vec = Avx2.GatherVector256(blockPtr, idx, 8);
 
-                        vec = Avx2.Shuffle(vec.AsByte(), Sha512ReverseEndianess_256).AsUInt64();
+                        vec = Avx2.Shuffle(vec.AsByte(), ReverseEndianess_64_256).AsUInt64();
 
                         schedulePtr[i] = vec;
                     }

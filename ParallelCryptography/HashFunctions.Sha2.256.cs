@@ -15,21 +15,19 @@ namespace ParallelCryptography
         {
             SHADataContext ctx = new SHADataContext(data);
 
-            byte[] hash = new byte[sizeof(uint) * 8];
+            Span<uint> state = stackalloc uint[8]
+            {
+                0x6a09e667,
+                0xbb67ae85,
+                0x3c6ef372,
+                0xa54ff53a,
+                0x510e527f,
+                0x9b05688c,
+                0x1f83d9ab,
+                0x5be0cd19
+            };
 
-            Span<uint> state = MemoryMarshal.Cast<byte, uint>(hash);
-
-            state[0] = 0x6a09e667;
-            state[1] = 0xbb67ae85;
-            state[2] = 0x3c6ef372;
-            state[3] = 0xa54ff53a;
-            state[4] = 0x510e527f;
-            state[5] = 0x9b05688c;
-            state[6] = 0x1f83d9ab;
-            state[7] = 0x5be0cd19;
-
-            var scheduleMemory = MemoryPool.Rent(64);
-            Span<uint> schedule = scheduleMemory.Memory.Span;
+            Span<uint> schedule = stackalloc uint[64];
 
             Span<byte> dataPortion = MemoryMarshal.Cast<uint, byte>(schedule.Slice(0, 16));
 
@@ -41,14 +39,12 @@ namespace ParallelCryptography
             }
             while (!ctx.Complete);
 
-            scheduleMemory.Dispose();
-
             if (BitConverter.IsLittleEndian)
             {
                 ReverseEndianess(state);
             }
 
-            return hash;
+            return MemoryMarshal.AsBytes(state).ToArray();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -64,31 +60,31 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[8];
+            Span<Vector128<uint>> state = stackalloc Vector128<uint>[8]
+            {
+                Vector128.Create(0x6a09e667u),
+                Vector128.Create(0xbb67ae85u),
+                Vector128.Create(0x3c6ef372u),
+                Vector128.Create(0xa54ff53au),
+                Vector128.Create(0x510e527fu),
+                Vector128.Create(0x9b05688cu),
+                Vector128.Create(0x1f83d9abu),
+                Vector128.Create(0x5be0cd19u)
+            };
             Span<bool> flags = stackalloc bool[4];
-            SHADataContext[] contexts = new SHADataContext[4];
+            SHADataContext[] contexts = new SHADataContext[4]
+            {
+                new SHADataContext(data1),
+                new SHADataContext(data2),
+                new SHADataContext(data3),
+                new SHADataContext(data4)
+            };
 
-            contexts[0] = new SHADataContext(data1);
-            contexts[1] = new SHADataContext(data2);
-            contexts[2] = new SHADataContext(data3);
-            contexts[3] = new SHADataContext(data4);
+            Span<uint> block = stackalloc uint[16 * 4];
 
-            var blockMemory = MemoryPool.Rent(16 * 4);
-            var scheduleMemory = MemoryPool.Rent(64 * 4);
-
-            Span<uint> block = blockMemory.Memory.Span;
-            Span<Vector128<uint>> schedule = MemoryMarshal.Cast<uint, Vector128<uint>>(scheduleMemory.Memory.Span);
+            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[64];
 
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 8);
-
-            state[0] = Vector128.Create(0x6a09e667u);
-            state[1] = Vector128.Create(0xbb67ae85u);
-            state[2] = Vector128.Create(0x3c6ef372u);
-            state[3] = Vector128.Create(0xa54ff53au);
-            state[4] = Vector128.Create(0x510e527fu);
-            state[5] = Vector128.Create(0x9b05688cu);
-            state[6] = Vector128.Create(0x1f83d9abu);
-            state[7] = Vector128.Create(0x5be0cd19u);
 
             int concurrentHashes = 4, i;
 
@@ -154,9 +150,6 @@ namespace ParallelCryptography
                 }
             }
 
-            blockMemory.Dispose();
-            scheduleMemory.Dispose();
-
             foreach (var hash in hashes)
             {
                 Span<uint> hashSpan = MemoryMarshal.Cast<byte, uint>(hash);
@@ -206,78 +199,6 @@ namespace ParallelCryptography
             state[5] += f;
             state[6] += g;
             state[7] += h;
-        }
-
-        private static unsafe void ProcessBlocksParallelSHA256(Span<Vector128<uint>> state, Span<uint> schedule) //Keeping until SHA224 optimization
-        {
-            Vector128<uint> a, b, c, d, e, f, g, h;
-
-            a = state[0];
-            b = state[1];
-            c = state[2];
-            d = state[3];
-            e = state[4];
-            f = state[5];
-            g = state[6];
-            h = state[7];
-
-            fixed (uint* schedule_ptr = schedule)
-            {
-                for (int i = 0; i < 64; ++i)
-                {
-                    Vector128<uint> tmp1, tmp2, S, ch;
-                    if (Avx2.IsSupported)
-                    {
-                        var idx = Sse2.Add(Vector128.Create(i), Sha256GatherIndex);
-                        tmp1 = Avx2.GatherVector128(schedule_ptr, idx, 4);
-                    }
-                    else
-                    {
-                        tmp1 = Vector128.Create(schedule_ptr[i], schedule_ptr[i + 64], schedule_ptr[i + 64 * 2], schedule_ptr[i + 64 * 3]);
-                    }
-
-                    S = Sse2.Or(Sse2.ShiftRightLogical(e, 6), Sse2.ShiftLeftLogical(e, 32 - 6));
-                    S = Sse2.Xor(S, Sse2.Or(Sse2.ShiftRightLogical(e, 11), Sse2.ShiftLeftLogical(e, 32 - 11)));
-                    S = Sse2.Xor(S, Sse2.Or(Sse2.ShiftRightLogical(e, 25), Sse2.ShiftLeftLogical(e, 32 - 25)));
-
-                    tmp1 = Sse2.Add(tmp1, Vector128.Create(SHA256TableK[i]));
-                    tmp1 = Sse2.Add(tmp1, h);
-
-                    ch = Sse2.And(e, f);
-                    ch = Sse2.Xor(ch, Sse2.AndNot(e, g));
-
-                    tmp1 = Sse2.Add(tmp1, S);
-                    tmp1 = Sse2.Add(tmp1, ch);
-
-                    S = Sse2.Or(Sse2.ShiftRightLogical(a, 2), Sse2.ShiftLeftLogical(a, 32 - 2));
-                    S = Sse2.Xor(S, Sse2.Or(Sse2.ShiftRightLogical(a, 13), Sse2.ShiftLeftLogical(a, 32 - 13)));
-                    S = Sse2.Xor(S, Sse2.Or(Sse2.ShiftRightLogical(a, 22), Sse2.ShiftLeftLogical(a, 32 - 22)));
-
-                    tmp2 = Sse2.And(a, b);
-                    tmp2 = Sse2.Xor(tmp2, Sse2.And(a, c));
-                    tmp2 = Sse2.Xor(tmp2, Sse2.And(b, c));
-
-                    tmp2 = Sse2.Add(tmp2, S);
-
-                    h = g;
-                    g = f;
-                    f = e;
-                    e = Sse2.Add(d, tmp1);
-                    d = c;
-                    c = b;
-                    b = a;
-                    a = Sse2.Add(tmp1, tmp2);
-                }
-            }
-
-            state[0] = Sse2.Add(a, state[0]);
-            state[1] = Sse2.Add(b, state[1]);
-            state[2] = Sse2.Add(c, state[2]);
-            state[3] = Sse2.Add(d, state[3]);
-            state[4] = Sse2.Add(e, state[4]);
-            state[5] = Sse2.Add(f, state[5]);
-            state[6] = Sse2.Add(g, state[6]);
-            state[7] = Sse2.Add(h, state[7]);
         }
 
         private static unsafe void ProcessBlocksParallelSHA256(Span<Vector128<uint>> state, Span<Vector128<uint>> schedule)
@@ -391,7 +312,7 @@ namespace ParallelCryptography
 
                             var vec = Avx2.GatherVector128(blockPtr, idx, 4);
 
-                            vec = Ssse3.Shuffle(vec.AsByte(), EndianessReverseShuffleConstant).AsUInt32();
+                            vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
 
                             schedulePtr[i] = vec;
                         }
