@@ -1,7 +1,7 @@
 ﻿using System;
-using System.Buffers;
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -10,8 +10,7 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
-
-
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA512(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -47,6 +46,7 @@ namespace ParallelCryptography
             return MemoryMarshal.AsBytes(state).ToArray();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[][] SHA512Parallel(byte[] data1, byte[] data2)
         {
             if (!Sse2.IsSupported)
@@ -159,6 +159,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[][] SHA512Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Avx2.IsSupported)
@@ -271,6 +272,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlockSHA512(Span<ulong> state, Span<ulong> schedule)
         {
             if (state.Length < 8 || schedule.Length < 80)
@@ -319,6 +321,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA512(Span<Vector128<ulong>> state, Span<Vector128<ulong>> schedule)
         {
             Vector128<ulong> a, b, c, d, e, f, g, h;
@@ -407,6 +410,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA512(Span<Vector256<ulong>> state, Span<Vector256<ulong>> schedule)
         {
             if (state.Length < 8 || schedule.Length < 80)
@@ -475,6 +479,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512(Span<ulong> schedule)
         {
             fixed (ulong* schedulePtr = schedule)
@@ -500,6 +505,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512Parallel(Span<Vector128<ulong>> schedule, Span<ulong> block)
         {
             fixed (Vector128<ulong>* schedulePtr = schedule)
@@ -581,6 +587,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512Parallel(Span<Vector256<ulong>> schedule, Span<ulong> block)
         {
             fixed (Vector256<ulong>* schedulePtr = schedule)

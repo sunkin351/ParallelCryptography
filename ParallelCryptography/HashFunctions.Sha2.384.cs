@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -7,6 +8,7 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA384(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -42,6 +44,7 @@ namespace ParallelCryptography
             return MemoryMarshal.AsBytes(state.Slice(0, 6)).ToArray();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2)
         {
             if (!BitConverter.IsLittleEndian)
@@ -156,6 +159,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!BitConverter.IsLittleEndian)

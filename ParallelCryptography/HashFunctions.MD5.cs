@@ -9,6 +9,7 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] MD5(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -44,6 +45,7 @@ namespace ParallelCryptography
             return MemoryMarshal.AsBytes(state).ToArray();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Sse2.IsSupported)
@@ -146,6 +148,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockMD5(Span<uint> state, Span<uint> schedule)
         {
             uint a, b, c, d;
@@ -215,6 +218,7 @@ namespace ParallelCryptography
             state[3] += d;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelMD5(Span<Vector128<uint>> state, Span<Vector128<uint>> schedule)
         {
             Vector128<uint> a, b, c, d;
@@ -370,6 +374,7 @@ namespace ParallelCryptography
             return Sse2.Or(tmp, tmp2);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void TransformParallelSchedule(Span<Vector128<uint>> transformed, Span<uint> schedule)
         {
             if (transformed.Length < 16 || schedule.Length < 16 * 4)

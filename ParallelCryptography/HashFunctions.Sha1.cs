@@ -11,6 +11,7 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA1(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -223,6 +224,7 @@ namespace ParallelCryptography
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA1Parallel(Span<Vector128<uint>> schedule, Span<uint> block)
         {
             if (block.Length < 16 * 4)
@@ -286,6 +288,7 @@ namespace ParallelCryptography
 
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockSHA1(Span<uint> state, Span<uint> chunk)
         {
             uint a, b, c, d, e;

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -11,6 +10,7 @@ namespace ParallelCryptography
 {
     public static partial class HashFunctions
     {
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA256(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -159,6 +159,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockSHA256(Span<uint> state, Span<uint> schedule)
         {
             uint a, b, c, d, e, f, g, h;
@@ -201,6 +202,7 @@ namespace ParallelCryptography
             state[7] += h;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA256(Span<Vector128<uint>> state, Span<Vector128<uint>> schedule)
         {
             Vector128<uint> a, b, c, d, e, f, g, h;
