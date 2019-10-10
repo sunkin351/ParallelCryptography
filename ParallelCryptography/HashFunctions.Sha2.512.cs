@@ -12,7 +12,7 @@ namespace ParallelCryptography
     {
 
 
-        public static byte[] Sha512(byte[] data)
+        public static byte[] SHA512(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
 
@@ -47,7 +47,7 @@ namespace ParallelCryptography
             return MemoryMarshal.AsBytes(state).ToArray();
         }
 
-        public static byte[][] Sha512Parallel(byte[] data1, byte[] data2)
+        public static byte[][] SHA512Parallel(byte[] data1, byte[] data2)
         {
             if (!Sse2.IsSupported)
             {
@@ -68,7 +68,7 @@ namespace ParallelCryptography
                 Vector128.Create(0x510e527fade682d1u),
                 Vector128.Create(0x9b05688c2b3e6c1fu),
                 Vector128.Create(0x1f83d9abfb41bd6bu),
-                Vector128.Create(0x5be0cd19137e2179u),
+                Vector128.Create(0x5be0cd19137e2179u)
             };
 
             Span<ulong> blocks = stackalloc ulong[16 * 2];
@@ -159,7 +159,7 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        public static byte[][] Sha512Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
+        public static byte[][] SHA512Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Avx2.IsSupported)
             {
@@ -180,7 +180,7 @@ namespace ParallelCryptography
                 Vector256.Create(0x510e527fade682d1u),
                 Vector256.Create(0x9b05688c2b3e6c1fu),
                 Vector256.Create(0x1f83d9abfb41bd6bu),
-                Vector256.Create(0x5be0cd19137e2179u),
+                Vector256.Create(0x5be0cd19137e2179u)
             };
 
             Span<ulong> blocks = stackalloc ulong[16 * 4];

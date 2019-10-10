@@ -102,19 +102,19 @@ namespace ParallelCryptography.Benchmarks
         [Benchmark]
         public byte[] SHA512_SingleHash_EmptyInput()
         {
-            return HashFunctions.Sha512(null);
+            return HashFunctions.SHA512(null);
         }
 
         [Benchmark(OperationsPerInvoke = 2)]
         public byte[][] SHA512_MultiHash_2_EmptyInput()
         {
-            return HashFunctions.Sha512Parallel(null, null);
+            return HashFunctions.SHA512Parallel(null, null);
         }
 
         [Benchmark(OperationsPerInvoke = 4)]
         public byte[][] SHA512_MultiHash_4_EmptyInput()
         {
-            return HashFunctions.Sha512Parallel(null, null, null, null);
+            return HashFunctions.SHA512Parallel(null, null, null, null);
         }
 
         static void Main(string[] args)

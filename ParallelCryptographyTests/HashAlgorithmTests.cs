@@ -45,7 +45,7 @@ namespace ParallelCryptography.Tests
         [Fact]
         public void SHA512()
         {
-            var hash = HashFunctions.Sha512(null);
+            var hash = HashFunctions.SHA512(null);
             Assert.Equal(SHA512Empty, MakeHashString(hash));
         }
 
@@ -76,15 +76,15 @@ namespace ParallelCryptography.Tests
         [Sse2IsSupportedFact]
         public void Sha512Parallel_2()
         {
-            Func<byte[], byte[], byte[][]> parallel = HashFunctions.Sha512Parallel;
-            ParallelTest(parallel, HashFunctions.Sha512);
+            Func<byte[], byte[], byte[][]> parallel = HashFunctions.SHA512Parallel;
+            ParallelTest(parallel, HashFunctions.SHA512);
         }
 
         [Avx2IsSupportedFact]
         public void Sha512Parallel_4()
         {
-            Func<byte[], byte[], byte[], byte[], byte[][]> parallel = HashFunctions.Sha512Parallel;
-            ParallelTest(parallel, HashFunctions.Sha512);
+            Func<byte[], byte[], byte[], byte[], byte[][]> parallel = HashFunctions.SHA512Parallel;
+            ParallelTest(parallel, HashFunctions.SHA512);
         }
 
         private static void ParallelTest(Func<byte[], byte[], byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
