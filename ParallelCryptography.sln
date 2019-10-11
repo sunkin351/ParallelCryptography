@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParallelCryptography", "Par
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParallelCryptography.Tests", "ParallelCryptographyTests\ParallelCryptography.Tests.csproj", "{4AD3ACFB-857F-4C36-B480-3FBF0913A8CB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ParallelCryptography.Benchmarks", "Benchmarks\ParallelCryptography.Benchmarks.csproj", "{E6DDAB0E-F088-417E-84E4-60E2360A28CC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParallelCryptography.Benchmarks", "Benchmarks\ParallelCryptography.Benchmarks.csproj", "{E6DDAB0E-F088-417E-84E4-60E2360A28CC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
