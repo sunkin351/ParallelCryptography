@@ -42,6 +42,12 @@ namespace ParallelCryptography.Benchmarks
             return HashFunctions.MD5Parallel(null, null, null, null);
         }
 
+        [BenchmarkCategory("MD5"), Benchmark(OperationsPerInvoke = 8)]
+        public byte[][] MD5_MultiHash_Avx2_EmptyInput()
+        {
+            return HashFunctions.MD5Parallel(null, null, null, null, null, null, null, null);
+        }
+
         [BenchmarkCategory("SHA1"), Benchmark(Baseline = true)]
         public byte[] Native_SHA1_SingleHash_EmptyInput()
         {

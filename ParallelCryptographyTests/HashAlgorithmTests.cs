@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using System.Threading;
 using Xunit;
+using System.Runtime.Intrinsics.X86;
 
 namespace ParallelCryptography.Tests
 {
@@ -60,7 +61,13 @@ namespace ParallelCryptography.Tests
         [Sse2IsSupportedFact]
         public void MD5Parallel()
         {
-            ParallelTest(HashFunctions.MD5Parallel, HashFunctions.MD5);
+            ParallelTest((Func<byte[], byte[], byte[], byte[], byte[][]>)HashFunctions.MD5Parallel, HashFunctions.MD5);
+        }
+
+        [Avx2IsSupportedFact]
+        public void MD5Parallel_Avx2()
+        {
+            ParallelTest((Func<byte[], byte[], byte[], byte[], byte[], byte[], byte[], byte[], byte[][]>)HashFunctions.MD5Parallel, HashFunctions.MD5);
         }
 
         [Sse2IsSupportedFact]
@@ -82,17 +89,15 @@ namespace ParallelCryptography.Tests
         }
 
         [Sse2IsSupportedFact]
-        public void Sha512Parallel_2()
+        public void Sha512Parallel()
         {
-            Func<byte[], byte[], byte[][]> parallel = HashFunctions.SHA512Parallel;
-            ParallelTest(parallel, HashFunctions.SHA512);
+            ParallelTest((Func<byte[], byte[], byte[][]>)HashFunctions.SHA512Parallel, HashFunctions.SHA512);
         }
 
         [Avx2IsSupportedFact]
-        public void Sha512Parallel_4()
+        public void Sha512Parallel_AVX2()
         {
-            Func<byte[], byte[], byte[], byte[], byte[][]> parallel = HashFunctions.SHA512Parallel;
-            ParallelTest(parallel, HashFunctions.SHA512);
+            ParallelTest((Func<byte[], byte[], byte[], byte[], byte[][]>)HashFunctions.SHA512Parallel, HashFunctions.SHA512);
         }
 
         [Sse2IsSupportedFact]
@@ -107,6 +112,39 @@ namespace ParallelCryptography.Tests
         {
             Func<byte[], byte[], byte[], byte[], byte[][]> parallel = HashFunctions.SHA384Parallel;
             ParallelTest(parallel, HashFunctions.SHA384);
+        }
+
+        private static void ParallelTest(Func<byte[], byte[], byte[], byte[], byte[], byte[], byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
+        {
+            var res = parallelHash(null, null, null, null, null, null, null, null);
+            var actual = scalar(null);
+
+            Assert.Equal(actual, res[0]);
+
+            for (int i = 1; i < 8; ++i)
+            {
+                Assert.Equal(actual, res[i]);
+            }
+
+            var rng = new Random();
+
+            byte[][] data = new byte[8][];
+            int len = 64;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                var tmp = new byte[len];
+                rng.NextBytes(tmp);
+                data[i] = tmp;
+                len *= 2;
+            }
+
+            var hashes = parallelHash(data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
+
+            for (int i = 0; i < 8; ++i)
+            {
+                Assert.Equal(scalar(data[i]), hashes[i]);
+            }
         }
 
         private static void ParallelTest(Func<byte[], byte[], byte[], byte[], byte[][]> parallelHash, Func<byte[], byte[]> scalar)
@@ -125,10 +163,10 @@ namespace ParallelCryptography.Tests
 
             byte[] arr1, arr2, arr3, arr4;
 
-            arr1 = new byte[63];
-            arr2 = new byte[127];
-            arr3 = new byte[255];
-            arr4 = new byte[511];
+            arr1 = new byte[64];
+            arr2 = new byte[128];
+            arr3 = new byte[256];
+            arr4 = new byte[512];
 
             rng.NextBytes(arr1);
             rng.NextBytes(arr2);
@@ -155,8 +193,8 @@ namespace ParallelCryptography.Tests
 
             byte[] arr1, arr2;
 
-            arr1 = new byte[127];
-            arr2 = new byte[511];
+            arr1 = new byte[128];
+            arr2 = new byte[512];
 
             rng.NextBytes(arr1);
             rng.NextBytes(arr2);
