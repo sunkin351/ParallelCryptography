@@ -40,27 +40,37 @@ namespace ParallelCryptography
             }
         }
 
-        private static void ReverseEndianess(Span<ulong> span)
+        private static unsafe void ReverseEndianess(Span<ulong> span)
         {
-            int i = 0;
-            if (Avx2.IsSupported && span.Length >= 4)
+            fixed (ulong* pSpan = span)
             {
-                var vecSpan = MemoryMarshal.Cast<ulong, Vector256<ulong>>(span);
-                for (; i < vecSpan.Length; ++i)
+                int i = 0;
+                if (Avx2.IsSupported && span.Length >= 4)
                 {
-                    vecSpan[i] = Avx2.Shuffle(vecSpan[i].AsByte(), ReverseEndianess_64_256).AsUInt64();
+                    do
+                    {
+                        var tmp = Avx.LoadVector256(pSpan + i);
+
+                        tmp = Avx2.Shuffle(tmp.AsByte(), ReverseEndianess_64_256).AsUInt64();
+
+                        Avx.Store(pSpan + i, tmp);
+
+                        i += Vector256<ulong>.Count;
+                    }
+                    while (span.Length - i >= Vector256<ulong>.Count);
+
+                    if ((span.Length & 3) == 0)
+                        return;
+
+                    i *= 4;
                 }
 
-                if ((span.Length & 3) == 0)
-                    return;
-
-                i *= 4;
+                for (; i < span.Length; ++i)
+                {
+                    span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
+                }
             }
 
-            for (; i < span.Length; ++i)
-            {
-                span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
-            }
         }
 
         private static byte[][] AllocateHashs(int hashCount, int hashLength)
@@ -73,9 +83,72 @@ namespace ParallelCryptography
             return res;
         }
 
+        private static unsafe void ExtractHashFromState(Vector128<uint>* state, Span<uint> hash, int hashIdx)
+        {
+            if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(hashIdx));
+            }
+
+            uint* stateScalar = (uint*)state;
+
+            for (int i = 0; i < hash.Length; ++i)
+            {
+                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
+            }
+        }
+
+        private static unsafe void ExtractHashFromState(Vector128<ulong>* state, Span<ulong> hash, int hashIdx)
+        {
+            if ((uint)hashIdx >= (uint)Vector128<ulong>.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(hashIdx));
+            }
+
+            ulong* stateScalar = (ulong*)state;
+
+            for (int i = 0; i < hash.Length; ++i)
+            {
+                hash[i] = stateScalar[Vector128<ulong>.Count * i + hashIdx];
+            }
+        }
+
+        private static unsafe void ExtractHashFromState(Vector256<uint>* state, Span<uint> hash, int hashIdx)
+        {
+            if ((uint)hashIdx >= (uint)Vector256<uint>.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(hashIdx));
+            }
+
+            uint* stateScalar = (uint*)state;
+
+            for (int i = 0; i < hash.Length; ++i)
+            {
+                hash[i] = stateScalar[Vector256<uint>.Count * i + hashIdx];
+            }
+        }
+
+        private static unsafe void ExtractHashFromState(Vector256<ulong>* state, Span<ulong> hash, int hashIdx)
+        {
+            if ((uint)hashIdx >= (uint)Vector256<ulong>.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(hashIdx));
+            }
+
+            ulong* stateScalar = (ulong*)state;
+
+            for (int i = 0; i < hash.Length; ++i)
+            {
+                hash[i] = stateScalar[Vector256<ulong>.Count * i + hashIdx];
+            }
+        }
+
         private static void ExtractHashFromState(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
         {
-            Debug.Assert((uint)hashIdx < 4u, "'hashIdx' is outside the acceptable range");
+            if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(hashIdx));
+            }
 
             Span<uint> stateScalar = MemoryMarshal.Cast<Vector128<uint>, uint>(state);
 
@@ -83,7 +156,7 @@ namespace ParallelCryptography
 
             for (int i = 0; i < length; ++i)
             {
-                hash[i] = stateScalar[4 * i + hashIdx];
+                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
             }
         }
 
@@ -115,7 +188,8 @@ namespace ParallelCryptography
             }
         }
 
-        private static readonly Vector128<uint> AllBitsSet = Vector128.Create(uint.MaxValue);
+        private static readonly Vector128<uint> AllBitsSet_128 = Vector128.Create(uint.MaxValue);
+        private static readonly Vector256<uint> AllBitsSet_256 = Vector256.Create(AllBitsSet_128, AllBitsSet_128);
 
         //MD5 statics
         private static readonly uint[] MD5TableK = new uint[]
@@ -186,6 +260,7 @@ namespace ParallelCryptography
         };
 
         private static readonly Vector128<int> GatherIndex_32_128 = Vector128.Create(0, 16, 16 * 2, 16 * 3);
+        private static readonly Vector256<int> GatherIndex_32_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7);
 
         private static readonly Vector128<long> GatherIndex_64_128 = Vector128.Create(0, 16);
         private static readonly Vector256<long> GatherIndex_64_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3);
