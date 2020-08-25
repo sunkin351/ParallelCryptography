@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -78,10 +79,10 @@ namespace ParallelCryptography
                 Vector128.Create(0x10325476u)
             };
 
-            Span<bool> flags = stackalloc bool[Vector128<uint>.Count];
+            bool* flags = stackalloc bool[Vector128<uint>.Count];
 
             Span<uint> blocks = stackalloc uint[16 * Vector128<uint>.Count];
-            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[16];
+            Vector128<uint>* schedule = stackalloc Vector128<uint>[16];
 
             int concurrentHashes = 4;
 
@@ -110,9 +111,10 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-
-                        ExtractHashFromState(state, hash, i);
+                        fixed (byte* pHash = hashes[i])
+                        {
+                            ExtractHashState_MD5(state, (uint*)pHash, i);
+                        }
 
                         concurrentHashes -= 1;
                     }
@@ -134,7 +136,10 @@ namespace ParallelCryptography
 
                     Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
 
-                    ExtractHashFromState(state, hash, i);
+                    fixed (uint* pHash = hash)
+                    {
+                        ExtractHashState_MD5(state, pHash, i);
+                    }
 
                     do
                     {
@@ -186,10 +191,10 @@ namespace ParallelCryptography
                 Vector256.Create(0x10325476u)
             };
 
-            Span<bool> flags = stackalloc bool[Vector256<uint>.Count];
+            bool* flags = stackalloc bool[Vector256<uint>.Count];
 
             Span<uint> blocks = stackalloc uint[16 * Vector256<uint>.Count];
-            Span<Vector256<uint>> schedule = stackalloc Vector256<uint>[16];
+            Vector256<uint>* schedule = stackalloc Vector256<uint>[16];
 
             int concurrentHashes = 4;
 
@@ -218,9 +223,10 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-
-                        ExtractHashFromState(state, hash, i);
+                        fixed (byte* pHash = hashes[i])
+                        {
+                            ExtractHashState_MD5(state, (uint*)pHash, i);
+                        }
 
                         concurrentHashes -= 1;
                     }
@@ -242,7 +248,10 @@ namespace ParallelCryptography
 
                     Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
 
-                    ExtractHashFromState(state, hash, i);
+                    fixed (uint* pHash = hash)
+                    {
+                        ExtractHashState_MD5(state, pHash, i);
+                    }
 
                     do
                     {
@@ -328,7 +337,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlocksParallelMD5(Vector128<uint>* state, Span<Vector128<uint>> schedule)
+        private static unsafe void ProcessBlocksParallelMD5(Vector128<uint>* state, Vector128<uint>* schedule)
         {
             Vector128<uint> a, b, c, d;
 
@@ -337,7 +346,6 @@ namespace ParallelCryptography
             c = state[2];
             d = state[3];
 
-            fixed (Vector128<uint>* schedulePtr = schedule)
             fixed (uint* tableK = MD5TableK)
             fixed (int* shiftConstants = MD5ShiftConsts)
             {
@@ -362,7 +370,7 @@ namespace ParallelCryptography
                         t = Vector128.Create(tableK[i]);
                     }
                     t = Sse2.Add(t, a);
-                    t = Sse2.Add(t, schedulePtr[idx]);
+                    t = Sse2.Add(t, schedule[idx]);
                     f = Sse2.Add(f, t);
 
                     a = d;
@@ -391,7 +399,7 @@ namespace ParallelCryptography
                         t = Vector128.Create(tableK[i]);
                     }
                     t = Sse2.Add(t, a);
-                    t = Sse2.Add(t, schedulePtr[idx]);
+                    t = Sse2.Add(t, schedule[idx]);
                     f = Sse2.Add(f, t);
 
                     a = d;
@@ -420,7 +428,7 @@ namespace ParallelCryptography
                         t = Vector128.Create(tableK[i]);
                     }
                     t = Sse2.Add(t, a);
-                    t = Sse2.Add(t, schedulePtr[idx]);
+                    t = Sse2.Add(t, schedule[idx]);
                     f = Sse2.Add(f, t);
 
                     a = d;
@@ -437,7 +445,7 @@ namespace ParallelCryptography
                 {
                     int idx = (7 * i) & 15;
 
-                    f = Sse2.Xor(d, AllBitsSet_128); //Bitwise NOT vector equivilant
+                    f = Sse2.Xor(d, Vector128<uint>.AllBitsSet); //Bitwise NOT vector equivilant
                     f = Sse2.Or(f, b);
                     f = Sse2.Xor(f, c);
 
@@ -450,7 +458,7 @@ namespace ParallelCryptography
                         t = Vector128.Create(tableK[i]);
                     }
                     t = Sse2.Add(t, a);
-                    t = Sse2.Add(t, schedulePtr[idx]);
+                    t = Sse2.Add(t, schedule[idx]);
                     f = Sse2.Add(f, t);
 
                     a = d;
@@ -471,7 +479,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlocksParallelMD5(Vector256<uint>* state, Span<Vector256<uint>> schedule)
+        private static unsafe void ProcessBlocksParallelMD5(Vector256<uint>* state, Vector256<uint>* schedule)
         {
             Vector256<uint> a, b, c, d;
 
@@ -480,7 +488,6 @@ namespace ParallelCryptography
             c = state[2];
             d = state[3];
 
-            fixed (Vector256<uint>* schedulePtr = schedule)
             fixed (uint* tableK = MD5TableK)
             fixed (int* shiftConstants = MD5ShiftConsts)
             {
@@ -498,7 +505,7 @@ namespace ParallelCryptography
                     //f += a + MD5TableK[i] + schedule[g];
                     t = Avx2.BroadcastScalarToVector256(tableK + i);
                     t = Avx2.Add(t, a);
-                    t = Avx2.Add(t, schedulePtr[idx]);
+                    t = Avx2.Add(t, schedule[idx]);
                     f = Avx2.Add(f, t);
 
                     a = d;
@@ -520,7 +527,7 @@ namespace ParallelCryptography
 
                     t = Avx2.BroadcastScalarToVector256(tableK + i);
                     t = Avx2.Add(t, a);
-                    t = Avx2.Add(t, schedulePtr[idx]);
+                    t = Avx2.Add(t, schedule[idx]);
                     f = Avx2.Add(f, t);
 
                     a = d;
@@ -542,7 +549,7 @@ namespace ParallelCryptography
 
                     t = Avx2.BroadcastScalarToVector256(tableK + i);
                     t = Avx2.Add(t, a);
-                    t = Avx2.Add(t, schedulePtr[idx]);
+                    t = Avx2.Add(t, schedule[idx]);
                     f = Avx2.Add(f, t);
 
                     a = d;
@@ -559,13 +566,13 @@ namespace ParallelCryptography
                 {
                     int idx = (7 * i) & 15;
 
-                    f = Avx2.Xor(d, AllBitsSet_256); //Bitwise NOT vector equivilant
+                    f = Avx2.Xor(d, Vector256<uint>.AllBitsSet); //Bitwise NOT vector equivilant
                     f = Avx2.Or(f, b);
                     f = Avx2.Xor(f, c);
 
                     t = Avx2.BroadcastScalarToVector256(tableK + i);
                     t = Avx2.Add(t, a);
-                    t = Avx2.Add(t, schedulePtr[idx]);
+                    t = Avx2.Add(t, schedule[idx]);
                     f = Avx2.Add(f, t);
 
                     a = d;
@@ -609,13 +616,10 @@ namespace ParallelCryptography
             return Avx2.Or(Avx2.ShiftLeftLogical(vec, tmp), Avx2.ShiftRightLogical(vec, tmp2));
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void TransformParallelSchedule(Span<Vector128<uint>> transformed, Span<uint> schedule)
+        private static unsafe void TransformParallelSchedule(Vector128<uint>* transformed, Span<uint> schedule)
         {
-            if (transformed.Length < 16 || schedule.Length < 16 * 4)
-                throw new ArgumentException();
+            Debug.Assert(schedule.Length >= 16 * 4);
 
-            fixed (Vector128<uint>* resptr = transformed)
             fixed (uint* schedPtr = schedule)
             {
                 for (int i = 0; i < 16; ++i)
@@ -623,32 +627,53 @@ namespace ParallelCryptography
                     if (Avx2.IsSupported)
                     {
                         var idx = Vector128.Create(i);
-                        idx = Sse2.Add(idx, GatherIndex_32_128);
-                        resptr[i] = Avx2.GatherVector128(schedPtr, idx, 4);
+                        idx = Sse2.Add(idx, Vector128.Create(0, 16, 16 * 2, 16 * 3));
+                        transformed[i] = Avx2.GatherVector128(schedPtr, idx, 4);
                     }
                     else
                     {
-                        resptr[i] = Vector128.Create(schedPtr[i], schedPtr[16 + i], schedPtr[16 * 2 + i], schedPtr[16 * 3 + i]);
+                        transformed[i] = Vector128.Create(schedPtr[i], schedPtr[16 + i], schedPtr[16 * 2 + i], schedPtr[16 * 3 + i]);
                     }
                 }
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void TransformParallelSchedule(Span<Vector256<uint>> transformed, Span<uint> schedule)
+        private static unsafe void TransformParallelSchedule(Vector256<uint>* transformed, Span<uint> schedule)
         {
-            if (transformed.Length < 16 || schedule.Length < 16 * 4)
-                throw new ArgumentException();
+            Debug.Assert(schedule.Length >= 16 * 4);
 
-            fixed (Vector256<uint>* resptr = transformed)
             fixed (uint* schedPtr = schedule)
             {
                 for (int i = 0; i < 16; ++i)
                 {
                     var idx = Vector256.Create(i);
-                    idx = Avx2.Add(idx, GatherIndex_32_256);
-                    resptr[i] = Avx2.GatherVector256(schedPtr, idx, 4);
+                    idx = Avx2.Add(idx, Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7));
+                    transformed[i] = Avx2.GatherVector256(schedPtr, idx, 4);
                 }
+            }
+        }
+
+        private static void ExtractHashState_MD5(Vector128<uint>* state, uint* hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
+
+            uint* stateScalar = (uint*)state;
+
+            for (int i = 0; i < 4; ++i)
+            {
+                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashState_MD5(Vector256<uint>* state, uint* hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector256<uint>.Count);
+
+            uint* stateScalar = (uint*)state;
+
+            for (int i = 0; i < 4; ++i)
+            {
+                hash[i] = stateScalar[Vector256<uint>.Count * i + hashIdx];
             }
         }
     }

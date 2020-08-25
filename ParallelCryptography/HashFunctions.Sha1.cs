@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
@@ -57,7 +57,7 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[5]
+            Vector128<uint>* state = stackalloc Vector128<uint>[5]
             {
                 Vector128.Create(0x67452301u),
                 Vector128.Create(0xEFCDAB89u),
@@ -66,7 +66,7 @@ namespace ParallelCryptography
                 Vector128.Create(0xC3D2E1F0u)
             };
 
-            Span<bool> flags = stackalloc bool[4];
+            bool* flags = stackalloc bool[4];
             SHADataContext[] contexts = new SHADataContext[4]
             {
                 new SHADataContext(data1),
@@ -74,8 +74,10 @@ namespace ParallelCryptography
                 new SHADataContext(data3),
                 new SHADataContext(data4)
             };
+
             Span<uint> blocks = stackalloc uint[16 * 4];
-            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[80];
+
+            Vector128<uint>* schedule = stackalloc Vector128<uint>[80];
 
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 5);
 
@@ -105,9 +107,8 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-
-                        ExtractHashFromState(state, hash, i);
+                        fixed (byte* pHash = hashes[i])
+                            ExtractHashState_SHA1(state, (uint*)pHash, i);
 
                         concurrentHashes -= 1;
                     }
@@ -117,7 +118,7 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<uint> scalarSchedule = MemoryMarshal.Cast<Vector128<uint>, uint>(schedule).Slice(0, 80);
+                Span<uint> scalarSchedule = new Span<uint>(schedule, 80);
                 Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
 
                 for (i = 0; i < 4; ++i)
@@ -129,7 +130,10 @@ namespace ParallelCryptography
 
                     Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
 
-                    ExtractHashFromState(state, hash, i);
+                    fixed (uint* pHash = hash)
+                    {
+                        ExtractHashState_SHA1(state, pHash, i);
+                    }
 
                     do
                     {
@@ -225,67 +229,58 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitScheduleSHA1Parallel(Span<Vector128<uint>> schedule, Span<uint> block)
+        private static unsafe void InitScheduleSHA1Parallel(Vector128<uint>* schedule, Span<uint> block)
         {
             if (block.Length < 16 * 4)
             {
                 throw new ArgumentException();
             }
 
-            if (schedule.Length < 80)
+            fixed (uint* blockPtr = block)
             {
-                throw new ArgumentException();
-            }
-
-            fixed (Vector128<uint>* schedulePtr = schedule)
-            {
-                fixed (uint* blockPtr = block)
+                if (Avx2.IsSupported)
                 {
-                    if (Avx2.IsSupported)
+                    for (int i = 0; i < 16; ++i)
                     {
-                        for (int i = 0; i < 16; ++i)
-                        {
-                            var idx = Vector128.Create(i);
-                            idx = Sse2.Add(idx, GatherIndex_32_128);
+                        var idx = Vector128.Create(i);
+                        idx = Sse2.Add(idx, GatherIndex_32_128);
 
-                            var vec = Avx2.GatherVector128(blockPtr, idx, 4);
+                        var vec = Avx2.GatherVector128(blockPtr, idx, 4);
 
-                            vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
+                        vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
 
-                            schedulePtr[i] = vec;
-                        }
-                    }
-                    else
-                    {
-                        uint* scheduleptr = (uint*)schedulePtr;
-
-                        for (int i = 0; i < 16; ++i)
-                        {
-                            var tptr = scheduleptr + (i * 4);
-
-                            tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
-                            tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
-                            tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
-                            tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
-                        }
+                        schedule[i] = vec;
                     }
                 }
-
-                for (int i = 16; i < 80; ++i)
+                else
                 {
-                    var res = schedulePtr[i - 16];
-                    res = Sse2.Xor(res, schedulePtr[i - 14]);
-                    res = Sse2.Xor(res, schedulePtr[i - 8]);
-                    res = Sse2.Xor(res, schedulePtr[i - 3]);
+                    uint* scheduleptr = (uint*)schedule;
 
-                    var rolltmp = Sse2.ShiftRightLogical(res, 31);
-                    res = Sse2.ShiftLeftLogical(res, 1);
-                    res = Sse2.Or(res, rolltmp);
+                    for (int i = 0; i < 16; ++i)
+                    {
+                        var tptr = scheduleptr + (i * 4);
 
-                    schedulePtr[i] = res;
+                        tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
+                        tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
+                        tptr[2] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 2]);
+                        tptr[3] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16 * 3]);
+                    }
                 }
             }
 
+            for (int i = 16; i < 80; ++i)
+            {
+                var res = schedule[i - 16];
+                res = Sse2.Xor(res, schedule[i - 14]);
+                res = Sse2.Xor(res, schedule[i - 8]);
+                res = Sse2.Xor(res, schedule[i - 3]);
+
+                var rolltmp = Sse2.ShiftRightLogical(res, 31);
+                res = Sse2.ShiftLeftLogical(res, 1);
+                res = Sse2.Or(res, rolltmp);
+
+                schedule[i] = res;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -359,11 +354,8 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlocksParallelSHA1(Span<Vector128<uint>> state, Span<Vector128<uint>> chunkData)
+        private static unsafe void ProcessBlocksParallelSHA1(Vector128<uint>* state, Vector128<uint>* chunk)
         {
-            Debug.Assert(state.Length == 5);
-            Debug.Assert(chunkData.Length >= 80);
-
             Vector128<uint> a, b, c, d, e;
 
             a = state[0];
@@ -372,97 +364,93 @@ namespace ParallelCryptography
             d = state[3];
             e = state[4];
 
+            int i = 0;
 
-            fixed (Vector128<uint>* chunk = chunkData)
+            Vector128<uint> f, t, k;
+            k = Vector128.Create(0x5A827999u);
+
+            while (i < 20)
             {
-                int i = 0;
+                t = Sse2.Xor(c, d);
+                t = Sse2.And(t, b);
+                t = Sse2.Xor(t, d);
 
-                Vector128<uint> f, t, k;
-                k = Vector128.Create(0x5A827999u);
+                t = Sse2.Add(t, chunk[i]);
+                t = Sse2.Add(t, e);
+                t = Sse2.Add(t, k);
+                t = Sse2.Add(t, RotateLeft5(a));
 
-                while (i < 20)
-                {
-                    t = Sse2.Xor(c, d);
-                    t = Sse2.And(t, b);
-                    t = Sse2.Xor(t, d);
+                e = d;
+                d = c;
+                c = RotateLeft30(b);
+                b = a;
+                a = t;
 
-                    t = Sse2.Add(t, chunk[i]);
-                    t = Sse2.Add(t, e);
-                    t = Sse2.Add(t, k);
-                    t = Sse2.Add(t, RotateLeft5(a));
+                i += 1;
+            }
 
-                    e = d;
-                    d = c;
-                    c = RotateLeft30(b);
-                    b = a;
-                    a = t;
+            k = Vector128.Create(0x6ED9EBA1u);
 
-                    i += 1;
-                }
+            while (i < 40)
+            {
+                t = Sse2.Xor(b, c);
+                t = Sse2.Xor(t, d);
 
-                k = Vector128.Create(0x6ED9EBA1u);
+                t = Sse2.Add(t, chunk[i]);
+                t = Sse2.Add(t, e);
+                t = Sse2.Add(t, k);
+                t = Sse2.Add(t, RotateLeft5(a));
 
-                while (i < 40)
-                {
-                    t = Sse2.Xor(b, c);
-                    t = Sse2.Xor(t, d);
+                e = d;
+                d = c;
+                c = RotateLeft30(b);
+                b = a;
+                a = t;
 
-                    t = Sse2.Add(t, chunk[i]);
-                    t = Sse2.Add(t, e);
-                    t = Sse2.Add(t, k);
-                    t = Sse2.Add(t, RotateLeft5(a));
+                i += 1;
+            }
 
-                    e = d;
-                    d = c;
-                    c = RotateLeft30(b);
-                    b = a;
-                    a = t;
+            k = Vector128.Create(0x8F1BBCDCu);
 
-                    i += 1;
-                }
+            while (i < 60)
+            {
+                t = Sse2.And(b, c);
+                t = Sse2.Or(t, Sse2.And(b, d));
+                t = Sse2.Or(t, Sse2.And(c, d));
 
-                k = Vector128.Create(0x8F1BBCDCu);
+                t = Sse2.Add(t, chunk[i]);
+                t = Sse2.Add(t, k);
+                t = Sse2.Add(t, e);
+                t = Sse2.Add(t, RotateLeft5(a));
 
-                while (i < 60)
-                {
-                    t = Sse2.And(b, c);
-                    t = Sse2.Or(t, Sse2.And(b, d));
-                    t = Sse2.Or(t, Sse2.And(c, d));
+                e = d;
+                d = c;
+                c = RotateLeft30(b);
+                b = a;
+                a = t;
 
-                    t = Sse2.Add(t, chunk[i]);
-                    t = Sse2.Add(t, k);
-                    t = Sse2.Add(t, e);
-                    t = Sse2.Add(t, RotateLeft5(a));
+                i += 1;
+            }
 
-                    e = d;
-                    d = c;
-                    c = RotateLeft30(b);
-                    b = a;
-                    a = t;
+            k = Vector128.Create(0xCA62C1D6u);
 
-                    i += 1;
-                }
+            while (i < 80)
+            {
+                t = Sse2.Xor(b, c);
+                t = Sse2.Xor(t, d);
 
-                k = Vector128.Create(0xCA62C1D6u);
+                t = Sse2.Add(t, chunk[i]);
+                t = Sse2.Add(t, e);
+                t = Sse2.Add(t, k);
+                t = Sse2.Add(t, RotateLeft5(a));
 
-                while (i < 80)
-                {
-                    t = Sse2.Xor(b, c);
-                    t = Sse2.Xor(t, d);
+                e = d;
+                d = c;
+                c = RotateLeft30(b);
+                b = a;
+                a = t;
 
-                    t = Sse2.Add(t, chunk[i]);
-                    t = Sse2.Add(t, e);
-                    t = Sse2.Add(t, k);
-                    t = Sse2.Add(t, RotateLeft5(a));
-
-                    e = d;
-                    d = c;
-                    c = RotateLeft30(b);
-                    b = a;
-                    a = t;
-
-                    i += 1;
-                }
+                i += 1;
             }
 
             state[0] = Sse2.Add(a, state[0]);
@@ -486,6 +474,29 @@ namespace ParallelCryptography
             var tmp = Sse2.ShiftLeftLogical(vec, 30);
             vec = Sse2.ShiftRightLogical(vec, 32 - 30);
             return Sse2.Or(tmp, vec);
+        }
+
+        private static void ExtractHashState_SHA1(Vector128<uint>* state, uint* hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
+
+            uint* stateScalar = (uint*)state;
+
+            if (Avx2.IsSupported)
+            {
+                var idx = Vector128.Create(hashIdx);
+                idx = Sse2.Add(idx, Vector128.Create(0, 4, 8, 12));
+
+                Sse2.Store(hash, Avx2.GatherVector128(stateScalar, idx, 4));
+                hash[4] = stateScalar[Vector128<uint>.Count * 4 + hashIdx];
+            }
+            else
+            {
+                for (int i = 0; i < 5; ++i)
+                {
+                    hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
+                }
+            }
         }
     }
 }

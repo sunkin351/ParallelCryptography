@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -14,7 +14,7 @@ namespace ParallelCryptography
             SHADataContext ctx = new SHADataContext(data);
 
             Span<ulong> state = stackalloc ulong[8]
-{
+            {
                 0xcbbb9d5dc1059ed8,
                 0x629a292a367cd507,
                 0x9159015a3070dd17,
@@ -57,7 +57,7 @@ namespace ParallelCryptography
                 throw new NotSupportedException(SSE2_NotAvailable);
             }
 
-            Span<Vector128<ulong>> state = stackalloc Vector128<ulong>[8]
+            Vector128<ulong>* state = stackalloc Vector128<ulong>[8]
             {
                 Vector128.Create(0xcbbb9d5dc1059ed8u),
                 Vector128.Create(0x629a292a367cd507u),
@@ -71,14 +71,15 @@ namespace ParallelCryptography
 
             Span<ulong> blocks = stackalloc ulong[16 * 2];
 
-            Span<Vector128<ulong>> schedule = stackalloc Vector128<ulong>[80];
+            Vector128<ulong>* schedule = stackalloc Vector128<ulong>[80];
 
-            Span<bool> flags = stackalloc bool[2];
+            bool* flags = stackalloc bool[Vector128<ulong>.Count];
 
-            SHADataContext[] contexts = new SHADataContext[2];
-
-            contexts[0] = new SHADataContext(data1);
-            contexts[1] = new SHADataContext(data2);
+            SHADataContext[] contexts = new SHADataContext[2]
+            {
+                new SHADataContext(data1),
+                new SHADataContext(data2)
+            };
 
             byte[][] hashes = AllocateHashs(2, sizeof(ulong) * 6);
 
@@ -110,7 +111,7 @@ namespace ParallelCryptography
 
                         Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
 
-                        ExtractHashFromState(state, hash, i);
+                        ExtractHashFromState_64_128(state, hash, i);
 
                         concurrentHashes -= 1;
                     }
@@ -120,10 +121,10 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<ulong> scalarSchedule = MemoryMarshal.Cast<Vector128<ulong>, ulong>(schedule).Slice(0, 80);
+                Span<ulong> scalarSchedule = new Span<ulong>(schedule, 80);
                 Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
 
-                Span<ulong> scalarState = new ulong[8];
+                Span<ulong> scalarState = stackalloc ulong[8];
 
                 for (i = 0; i < 2; ++i)
                 {
@@ -134,7 +135,7 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    ExtractHashFromState(state, scalarState, i);
+                    ExtractHashFromState_64_128(state, scalarState, i);
 
                     do
                     {
@@ -153,6 +154,8 @@ namespace ParallelCryptography
             foreach (var hash in hashes)
             {
                 Span<ulong> hashSpan = MemoryMarshal.Cast<byte, ulong>(hash);
+
+
                 ReverseEndianess(hashSpan);
             }
 

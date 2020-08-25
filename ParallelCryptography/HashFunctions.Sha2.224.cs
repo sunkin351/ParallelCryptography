@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -58,7 +59,7 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector128<uint>> state = stackalloc Vector128<uint>[8]
+            Vector128<uint>* state = stackalloc Vector128<uint>[8]
             {
                 Vector128.Create(0xc1059ed8u),
                 Vector128.Create(0x367cd507u),
@@ -70,7 +71,8 @@ namespace ParallelCryptography
                 Vector128.Create(0xbefa4fa4u)
             };
 
-            Span<bool> flags = stackalloc bool[4];
+            bool* flags = stackalloc bool[4];
+            
             SHADataContext[] contexts = new SHADataContext[4]
             {
                 new SHADataContext(data1),
@@ -80,7 +82,9 @@ namespace ParallelCryptography
             };
 
             Span<uint> blocks = stackalloc uint[16 * 4];
-            Span<Vector128<uint>> schedule = stackalloc Vector128<uint>[64];
+            
+            Vector128<uint>* schedule = stackalloc Vector128<uint>[64];
+
             byte[][] hashes = AllocateHashs(4, sizeof(uint) * 7);
 
             int concurrentHashes = 4, i;
@@ -109,9 +113,8 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-
-                        ExtractHashFromState(state, hash, i);
+                        fixed (byte* pHash = hashes[i])
+                            ExtractHashState_SHA224(state, (uint*)pHash, i);
 
                         concurrentHashes -= 1;
                     }
@@ -123,7 +126,7 @@ namespace ParallelCryptography
             {
                 var dataBlock = MemoryMarshal.AsBytes(blocks.Slice(0, 16));
 
-                Span<uint> scalarState = new uint[8];
+                Span<uint> scalarState = stackalloc uint[8];
 
                 for (i = 0; i < 4; ++i)
                 {
@@ -134,7 +137,7 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    ExtractHashFromState(state, scalarState, i);
+                    ExtractHashState_SHA256(state, (uint*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scalarState)), i);
 
                     do
                     {
@@ -157,6 +160,19 @@ namespace ParallelCryptography
             }
 
             return hashes;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        public static void ExtractHashState_SHA224(Vector128<uint>* state, uint* hash, int hashIdx)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
+
+            uint* stateScalar = (uint*)state;
+
+            for (int i = 0; i < 7; ++i)
+            {
+                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
+            }
         }
     }
 }

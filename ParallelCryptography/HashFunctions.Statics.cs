@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -70,7 +70,6 @@ namespace ParallelCryptography
                     span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
                 }
             }
-
         }
 
         private static byte[][] AllocateHashs(int hashCount, int hashLength)
@@ -83,7 +82,7 @@ namespace ParallelCryptography
             return res;
         }
 
-        private static unsafe void ExtractHashFromState(Vector128<uint>* state, Span<uint> hash, int hashIdx)
+        private static unsafe void ExtractHashFromState_32_128(Vector128<uint>* state, Span<uint> hash, int hashIdx)
         {
             if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
             {
@@ -98,7 +97,7 @@ namespace ParallelCryptography
             }
         }
 
-        private static unsafe void ExtractHashFromState(Vector128<ulong>* state, Span<ulong> hash, int hashIdx)
+        private static unsafe void ExtractHashFromState_64_128(Vector128<ulong>* state, Span<ulong> hash, int hashIdx)
         {
             if ((uint)hashIdx >= (uint)Vector128<ulong>.Count)
             {
@@ -113,7 +112,7 @@ namespace ParallelCryptography
             }
         }
 
-        private static unsafe void ExtractHashFromState(Vector256<uint>* state, Span<uint> hash, int hashIdx)
+        private static unsafe void ExtractHashFromState_32_256(Vector256<uint>* state, Span<uint> hash, int hashIdx)
         {
             if ((uint)hashIdx >= (uint)Vector256<uint>.Count)
             {
@@ -128,7 +127,7 @@ namespace ParallelCryptography
             }
         }
 
-        private static unsafe void ExtractHashFromState(Vector256<ulong>* state, Span<ulong> hash, int hashIdx)
+        private static unsafe void ExtractHashFromState_64_256(Vector256<ulong>* state, Span<ulong> hash, int hashIdx)
         {
             if ((uint)hashIdx >= (uint)Vector256<ulong>.Count)
             {
@@ -143,7 +142,7 @@ namespace ParallelCryptography
             }
         }
 
-        private static void ExtractHashFromState(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
+        private static void ExtractHashFromState_32_128(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
         {
             if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
             {
@@ -160,7 +159,7 @@ namespace ParallelCryptography
             }
         }
 
-        private static void ExtractHashFromState(Span<Vector128<ulong>> state, Span<ulong> hash, int hashIdx)
+        private static void ExtractHashFromState_64_128(Span<Vector128<ulong>> state, Span<ulong> hash, int hashIdx)
         {
             Debug.Assert((uint)hashIdx < 2u, "'hashIdx' is outside the acceptable range");
 
@@ -187,9 +186,6 @@ namespace ParallelCryptography
                 hash[i] = stateScalar[4 * i + hashIdx];
             }
         }
-
-        private static readonly Vector128<uint> AllBitsSet_128 = Vector128.Create(uint.MaxValue);
-        private static readonly Vector256<uint> AllBitsSet_256 = Vector256.Create(AllBitsSet_128, AllBitsSet_128);
 
         //MD5 statics
         private static readonly uint[] MD5TableK = new uint[]
@@ -237,8 +233,6 @@ namespace ParallelCryptography
             0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
         };
 
-        private static readonly Vector128<int> Sha256GatherIndex = Vector128.Create(0, 64, 64 * 2, 64 * 3);
-
         private static readonly ulong[] SHA512TableK = new ulong[80]
         {
             0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc, 0x3956c25bf348b538,
@@ -281,6 +275,7 @@ namespace ParallelCryptography
         {
             private readonly byte[] _data;
             private readonly ulong _bitsize;
+            private readonly int _dataLength;
             private int _dataidx;
             private bool appended;
 
@@ -289,7 +284,11 @@ namespace ParallelCryptography
             public SHADataContext(byte[] data)
             {
                 _data = data;
-                _bitsize = data == null ? 0 : (ulong)data.Length * 8;
+
+                int len = data == null ? 0 : data.Length;
+
+                _dataLength = len;
+                _bitsize = (ulong)len * 8;
                 _dataidx = 0;
                 appended = false;
                 Complete = false;
@@ -300,7 +299,7 @@ namespace ParallelCryptography
             {
                 Debug.Assert(span.Length == 64 || span.Length == 128);
 
-                int len = Math.Min(span.Length, Length() - _dataidx);
+                int len = Math.Min(span.Length, _dataLength - _dataidx);
 
                 if (len == 0)
                 {
@@ -341,11 +340,6 @@ namespace ParallelCryptography
                         }
                     }
                 }
-            }
-
-            private int Length()
-            {
-                return _data?.Length ?? 0;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
