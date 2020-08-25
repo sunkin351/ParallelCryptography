@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
@@ -9,7 +9,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace ParallelCryptography
 {
-    public static partial class HashFunctions
+    public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA1(byte[] data)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -6,7 +6,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace ParallelCryptography
 {
-    public static partial class HashFunctions
+    public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA224(byte[] data)

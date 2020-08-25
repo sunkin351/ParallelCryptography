@@ -7,7 +7,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace ParallelCryptography
 {
-    public static partial class HashFunctions
+    public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] MD5(byte[] data)
