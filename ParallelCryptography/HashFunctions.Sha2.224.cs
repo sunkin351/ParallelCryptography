@@ -14,7 +14,7 @@ namespace ParallelCryptography
         {
             SHADataContext ctx = new SHADataContext(data);
 
-            Span<uint> state = stackalloc uint[8]
+            uint* state = stackalloc uint[8]
             {
                 0xc1059ed8,
                 0x367cd507,
@@ -26,13 +26,11 @@ namespace ParallelCryptography
                 0xbefa4fa4
             };
 
-            Span<uint> schedule = stackalloc uint[64];
-
-            Span<byte> dataPortion = MemoryMarshal.AsBytes(schedule.Slice(0, 16));
+            uint* schedule = stackalloc uint[64];
 
             do
             {
-                ctx.PrepareBlock(dataPortion);
+                ctx.PrepareBlock((byte*)schedule, sizeof(uint) * 16);
                 InitScheduleSHA256(schedule);
                 ProcessBlockSHA256(state, schedule);
             }
@@ -40,10 +38,19 @@ namespace ParallelCryptography
 
             if (BitConverter.IsLittleEndian)
             {
-                ReverseEndianess(state);
-            }
+                byte[] hash = new byte[sizeof(uint) * 7];
 
-            return MemoryMarshal.AsBytes(state.Slice(0, 7)).ToArray();
+                fixed (byte* phash = hash)
+                {
+                    ReverseEndianess(state, (uint*)phash, 7);
+                }
+
+                return hash;
+            }
+            else
+            {
+                return new Span<byte>(state, sizeof(uint) * 7).ToArray();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -81,7 +88,7 @@ namespace ParallelCryptography
                 new SHADataContext(data4)
             };
 
-            Span<uint> blocks = stackalloc uint[16 * 4];
+            uint* blocks = stackalloc uint[16 * 4];
             
             Vector128<uint>* schedule = stackalloc Vector128<uint>[64];
 
@@ -97,7 +104,7 @@ namespace ParallelCryptography
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16)));
+                        ctx.PrepareBlock((byte*)(blocks + i * 16), sizeof(uint) * 16);
                     }
                 }
 
@@ -124,9 +131,7 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                var dataBlock = MemoryMarshal.AsBytes(blocks.Slice(0, 16));
-
-                Span<uint> scalarState = stackalloc uint[8];
+                uint* scalarState = stackalloc uint[8];
 
                 for (i = 0; i < 4; ++i)
                 {
@@ -137,26 +142,26 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    ExtractHashState_SHA256(state, (uint*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scalarState)), i);
+                    ExtractHashState_SHA256(state, scalarState, i);
 
                     do
                     {
-                        ctx.PrepareBlock(dataBlock);
+                        ctx.PrepareBlock((byte*)schedule, sizeof(uint) * 16);
 
-                        InitScheduleSHA256(blocks);
+                        InitScheduleSHA256((uint*)schedule);
 
-                        ProcessBlockSHA256(scalarState, blocks);
+                        ProcessBlockSHA256(scalarState, (uint*)schedule);
 
                     } while (!ctx.Complete);
 
-                    MemoryMarshal.AsBytes(scalarState.Slice(0, 7)).CopyTo(hashes[i]);
+                    new Span<byte>(scalarState, sizeof(uint) * 7).CopyTo(hashes[i]);
                 }
             }
 
             foreach (var hash in hashes)
             {
-                Span<uint> hashSpan = MemoryMarshal.Cast<byte, uint>(hash);
-                ReverseEndianess(hashSpan);
+                fixed (byte* phash = hash)
+                    ReverseEndianess((uint*)phash, 7);
             }
 
             return hashes;

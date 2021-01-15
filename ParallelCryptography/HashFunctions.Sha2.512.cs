@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -13,9 +14,9 @@ namespace ParallelCryptography
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] SHA512(byte[] data)
         {
-            SHADataContext ctx = new SHADataContext(data);
+            SHADataContext ctx = new SHADataContext(data, SHADataContext.AlgorithmWordSize._64);
 
-            Span<ulong> state = stackalloc ulong[8] 
+            ulong* state = stackalloc ulong[8] 
             {
                 0x6a09e667f3bcc908,
                 0xbb67ae8584caa73b,
@@ -27,12 +28,11 @@ namespace ParallelCryptography
                 0x5be0cd19137e2179
             };
 
-            Span<ulong> schedule = stackalloc ulong[80];
-            Span<byte> dataPortion = MemoryMarshal.AsBytes(schedule.Slice(0, 16));
+            ulong* schedule = stackalloc ulong[80];
 
             do
             {
-                ctx.PrepareBlock(dataPortion);
+                ctx.PrepareBlock((byte*)schedule, sizeof(ulong) * 16);
                 InitScheduleSHA512(schedule);
                 ProcessBlockSHA512(state, schedule);
             }
@@ -40,10 +40,27 @@ namespace ParallelCryptography
 
             if (BitConverter.IsLittleEndian)
             {
-                ReverseEndianess(state);
-            }
+                var hash = new byte[8 * sizeof(ulong)];
 
-            return MemoryMarshal.AsBytes(state).ToArray();
+                if (Avx2.IsSupported)
+                {
+                    Vector256<ulong> vec = Avx2.LoadVector256(state), vec2 = Avx2.LoadVector256(state + 4);
+
+                    Unsafe.As<byte, Vector256<byte>>(ref hash[0]) = Avx2.Shuffle(vec.AsByte(), ReverseEndianess_64_256);
+                    Unsafe.As<byte, Vector256<byte>>(ref hash[sizeof(ulong) * 4]) = Avx2.Shuffle(vec2.AsByte(), ReverseEndianess_64_256);
+                }
+                else
+                {
+                    fixed (byte* phash = hash)
+                        ReverseEndianess(state, (ulong*)phash, 8);
+                }
+
+                return hash;
+            }
+            else
+            {
+                return new Span<byte>(state, sizeof(ulong) * 8).ToArray();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -71,7 +88,7 @@ namespace ParallelCryptography
                 Vector128.Create(0x5be0cd19137e2179u)
             };
 
-            Span<ulong> blocks = stackalloc ulong[16 * 2];
+            ulong* blocks = stackalloc ulong[16 * 2];
 
             Vector128<ulong>* schedule = stackalloc Vector128<ulong>[80];
 
@@ -79,8 +96,8 @@ namespace ParallelCryptography
 
             SHADataContext[] contexts = new SHADataContext[2]
             {
-                new SHADataContext(data1),
-                new SHADataContext(data2)
+                new SHADataContext(data1, SHADataContext.AlgorithmWordSize._64),
+                new SHADataContext(data2, SHADataContext.AlgorithmWordSize._64)
             };
 
             byte[][] hashes = AllocateHashs(2, sizeof(ulong) * 8);
@@ -95,7 +112,7 @@ namespace ParallelCryptography
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16)));
+                        ctx.PrepareBlock((byte*)(blocks + i * 16), sizeof(ulong) * 16);
                     }
                 }
 
@@ -111,9 +128,10 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                        ExtractHashFromState_64_128(state, hash, i);
+                        fixed (byte* hash = hashes[i])
+                        {
+                            ExtractHashState_SHA512(state, (ulong*)hash, i);
+                        }
 
                         concurrentHashes -= 1;
                     }
@@ -123,8 +141,7 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<ulong> scalarSchedule = new Span<ulong>(schedule, 80);
-                Span<byte> dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
+                Span<byte> dataBlock = new Span<byte>(schedule, sizeof(ulong) * 16);
 
                 for (i = 0; i < 2; ++i)
                 {
@@ -135,26 +152,27 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                    ExtractHashFromState_64_128(state, hash, i);
-
-                    do
+                    fixed (byte* hash = hashes[i])
                     {
-                        ctx.PrepareBlock(dataBlock);
+                        ExtractHashState_SHA512(state, (ulong*)hash, i);
 
-                        InitScheduleSHA512(scalarSchedule);
+                        do
+                        {
+                            ctx.PrepareBlock((byte*)schedule, sizeof(ulong) * 16);
 
-                        ProcessBlockSHA512(hash, scalarSchedule);
+                            InitScheduleSHA512((ulong*)schedule);
 
-                    } while (!ctx.Complete);
+                            ProcessBlockSHA512((ulong*)hash, (ulong*)schedule);
+
+                        } while (!ctx.Complete);
+                    }
                 }
             }
 
             foreach (var hash in hashes)
             {
-                Span<ulong> hashSpan = MemoryMarshal.Cast<byte, ulong>(hash);
-                ReverseEndianess(hashSpan);
+                fixed (byte* phash = hash)
+                    ReverseEndianess((ulong*)phash, 8);
             }
 
             return hashes;
@@ -173,7 +191,7 @@ namespace ParallelCryptography
                 throw new NotSupportedException(BigEndian_NotSupported);
             }
 
-            Span<Vector256<ulong>> state = stackalloc Vector256<ulong>[8]
+            Vector256<ulong>* state = stackalloc Vector256<ulong>[8]
             {
                 Vector256.Create(0x6a09e667f3bcc908u),
                 Vector256.Create(0xbb67ae8584caa73bu),
@@ -185,16 +203,16 @@ namespace ParallelCryptography
                 Vector256.Create(0x5be0cd19137e2179u)
             };
 
-            Span<ulong> blocks = stackalloc ulong[16 * 4];
-            Span<Vector256<ulong>> schedule = stackalloc Vector256<ulong>[80];
+            ulong* blocks = stackalloc ulong[16 * 4];
+            Vector256<ulong>* schedule = stackalloc Vector256<ulong>[80];
 
-            Span<bool> flags = stackalloc bool[4];
+            bool* flags = stackalloc bool[4];
             SHADataContext[] contexts = new SHADataContext[4]
             {
-                new SHADataContext(data1),
-                new SHADataContext(data2),
-                new SHADataContext(data3),
-                new SHADataContext(data4)
+                new SHADataContext(data1, SHADataContext.AlgorithmWordSize._64),
+                new SHADataContext(data2, SHADataContext.AlgorithmWordSize._64),
+                new SHADataContext(data3, SHADataContext.AlgorithmWordSize._64),
+                new SHADataContext(data4, SHADataContext.AlgorithmWordSize._64)
             };
 
             byte[][] hashes = AllocateHashs(4, sizeof(ulong) * 8);
@@ -209,7 +227,7 @@ namespace ParallelCryptography
 
                     if (!ctx.Complete)
                     {
-                        ctx.PrepareBlock(MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16)));
+                        ctx.PrepareBlock((byte*)(blocks + i * 16), sizeof(ulong) * 16);
                     }
                 }
 
@@ -225,9 +243,10 @@ namespace ParallelCryptography
                     {
                         flags[i] = ctx.Complete;
 
-                        Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                        ExtractHashFromState(state, hash, i);
+                        fixed (byte* hash = hashes[i])
+                        {
+                            ExtractHashState_SHA512(state, (ulong*)hash, i);
+                        }
 
                         concurrentHashes -= 1;
                     }
@@ -237,9 +256,6 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<ulong> scalarSchedule = MemoryMarshal.Cast<Vector256<ulong>, ulong>(schedule).Slice(0, 80);
-                var dataBlock = MemoryMarshal.AsBytes(scalarSchedule.Slice(0, 16));
-
                 for (i = 0; i < 4; ++i)
                 {
                     ref SHADataContext ctx = ref contexts[i];
@@ -249,49 +265,47 @@ namespace ParallelCryptography
                         continue;
                     }
 
-                    Span<ulong> hash = MemoryMarshal.Cast<byte, ulong>(hashes[i]);
-
-                    ExtractHashFromState(state, hash, i);
-
-                    do
+                    fixed (byte* hash = hashes[i])
                     {
-                        ctx.PrepareBlock(dataBlock);
+                        ExtractHashState_SHA512(state, (ulong*)hash, i);
 
-                        InitScheduleSHA512(scalarSchedule);
+                        do
+                        {
+                            ctx.PrepareBlock((byte*)schedule, sizeof(ulong) * 16);
 
-                        ProcessBlockSHA512(hash, scalarSchedule);
+                            InitScheduleSHA512((ulong*)schedule);
 
-                    } while (!ctx.Complete);
+                            ProcessBlockSHA512((ulong*)hash, (ulong*)schedule);
+
+                        } while (!ctx.Complete);
+                    }
                 }
             }
 
             foreach (var hash in hashes)
             {
-                Span<ulong> hashSpan = MemoryMarshal.Cast<byte, ulong>(hash);
-                ReverseEndianess(hashSpan);
+                fixed (byte* phash = hash)
+                    ReverseEndianess((ulong*)phash, 8);
             }
 
             return hashes;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlockSHA512(Span<ulong> state, Span<ulong> schedule)
+        private static unsafe void ProcessBlockSHA512(ulong* state, ulong* schedule)
         {
-            if (state.Length < 8 || schedule.Length < 80)
-                throw new ArgumentException();
-
-            fixed (ulong* statePtr = state, schedulePtr = schedule, tableK = SHA512TableK)
+            fixed (ulong* tableK = SHA512TableK)
             {
                 ulong a, b, c, d, e, f, g, h;
 
-                a = statePtr[0];
-                b = statePtr[1];
-                c = statePtr[2];
-                d = statePtr[3];
-                e = statePtr[4];
-                f = statePtr[5];
-                g = statePtr[6];
-                h = statePtr[7];
+                a = state[0];
+                b = state[1];
+                c = state[2];
+                d = state[3];
+                e = state[4];
+                f = state[5];
+                g = state[6];
+                h = state[7];
 
                 for (int i = 0; i < 80; ++i)
                 {
@@ -299,7 +313,7 @@ namespace ParallelCryptography
                     var maj = (a & b) ^ (a & c) ^ (b & c);
                     var S0 = BitOperations.RotateRight(a, 28) ^ BitOperations.RotateRight(a, 34) ^ BitOperations.RotateRight(a, 39);
                     var S1 = BitOperations.RotateRight(e, 14) ^ BitOperations.RotateRight(e, 18) ^ BitOperations.RotateRight(e, 41);
-                    var tmp1 = h + S1 + ch + tableK[i] + schedulePtr[i];
+                    var tmp1 = h + S1 + ch + tableK[i] + schedule[i];
                     var tmp2 = S0 + maj;
 
                     h = g;
@@ -312,14 +326,14 @@ namespace ParallelCryptography
                     a = tmp1 + tmp2;
                 }
 
-                statePtr[0] += a;
-                statePtr[1] += b;
-                statePtr[2] += c;
-                statePtr[3] += d;
-                statePtr[4] += e;
-                statePtr[5] += f;
-                statePtr[6] += g;
-                statePtr[7] += h;
+                state[0] += a;
+                state[1] += b;
+                state[2] += c;
+                state[3] += d;
+                state[4] += e;
+                state[5] += f;
+                state[6] += g;
+                state[7] += h;
             }
         }
 
@@ -409,24 +423,20 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void ProcessBlocksParallelSHA512(Span<Vector256<ulong>> state, Span<Vector256<ulong>> schedule)
+        private static unsafe void ProcessBlocksParallelSHA512(Vector256<ulong>* state, Vector256<ulong>* schedule)
         {
-            if (state.Length < 8 || schedule.Length < 80)
-                throw new ArgumentException();
-
             Vector256<ulong> a, b, c, d, e, f, g, h;
 
-            fixed (Vector256<ulong>* statePtr = state, schedulePtr = schedule)
             fixed (ulong* tableK = SHA512TableK)
             {
-                a = statePtr[0];
-                b = statePtr[1];
-                c = statePtr[2];
-                d = statePtr[3];
-                e = statePtr[4];
-                f = statePtr[5];
-                g = statePtr[6];
-                h = statePtr[7];
+                a = state[0];
+                b = state[1];
+                c = state[2];
+                d = state[3];
+                e = state[4];
+                f = state[5];
+                g = state[6];
+                h = state[7];
 
                 for (int i = 0; i < 80; ++i)
                 {
@@ -451,7 +461,7 @@ namespace ParallelCryptography
                     S = Avx2.Xor(S, Avx2.Or(Avx2.ShiftRightLogical(e, 41), Avx2.ShiftLeftLogical(e, 64 - 41)));
 
                     tmp1 = Avx2.BroadcastScalarToVector256(tableK + i);
-                    tmp1 = Avx2.Add(tmp1, schedulePtr[i]);
+                    tmp1 = Avx2.Add(tmp1, schedule[i]);
                     tmp1 = Avx2.Add(tmp1, S);
                     tmp1 = Avx2.Add(tmp1, ch);
                     tmp1 = Avx2.Add(tmp1, h);
@@ -466,73 +476,64 @@ namespace ParallelCryptography
                     a = Avx2.Add(tmp1, tmp2);
                 }
 
-                statePtr[0] = Avx2.Add(a, statePtr[0]);
-                statePtr[1] = Avx2.Add(b, statePtr[1]);
-                statePtr[2] = Avx2.Add(c, statePtr[2]);
-                statePtr[3] = Avx2.Add(d, statePtr[3]);
-                statePtr[4] = Avx2.Add(e, statePtr[4]);
-                statePtr[5] = Avx2.Add(f, statePtr[5]);
-                statePtr[6] = Avx2.Add(g, statePtr[6]);
-                statePtr[7] = Avx2.Add(h, statePtr[7]);
+                state[0] = Avx2.Add(a, state[0]);
+                state[1] = Avx2.Add(b, state[1]);
+                state[2] = Avx2.Add(c, state[2]);
+                state[3] = Avx2.Add(d, state[3]);
+                state[4] = Avx2.Add(e, state[4]);
+                state[5] = Avx2.Add(f, state[5]);
+                state[6] = Avx2.Add(g, state[6]);
+                state[7] = Avx2.Add(h, state[7]);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitScheduleSHA512(Span<ulong> schedule)
+        private static unsafe void InitScheduleSHA512(ulong* schedule)
         {
-            fixed (ulong* schedulePtr = schedule)
+            if (BitConverter.IsLittleEndian)
             {
-                if (BitConverter.IsLittleEndian)
-                {
-                    for (int i = 0; i < 16; ++i)
-                    {
-                        schedulePtr[i] = BinaryPrimitives.ReverseEndianness(schedulePtr[i]);
-                    }
-                }
+                ReverseEndianess(schedule, 16);
+            }
 
-                for (int i = 16; i < 80; ++i)
-                {
-                    var tmp = schedulePtr[i - 15];
-                    var s0 = BitOperations.RotateRight(tmp, 1) ^ BitOperations.RotateRight(tmp, 8) ^ (tmp >> 7);
+            for (int i = 16; i < 80; ++i)
+            {
+                var tmp = schedule[i - 15];
+                var s0 = BitOperations.RotateRight(tmp, 1) ^ BitOperations.RotateRight(tmp, 8) ^ (tmp >> 7);
 
-                    tmp = schedulePtr[i - 2];
-                    var s1 = BitOperations.RotateRight(tmp, 19) ^ BitOperations.RotateRight(tmp, 61) ^ (tmp >> 6);
+                tmp = schedule[i - 2];
+                var s1 = BitOperations.RotateRight(tmp, 19) ^ BitOperations.RotateRight(tmp, 61) ^ (tmp >> 6);
 
-                    schedulePtr[i] = schedulePtr[i - 16] + s0 + schedulePtr[i - 7] + s1;
-                }
+                schedule[i] = schedule[i - 16] + s0 + schedule[i - 7] + s1;
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitScheduleSHA512Parallel(Vector128<ulong>* schedule, Span<ulong> block)
+        private static unsafe void InitScheduleSHA512Parallel(Vector128<ulong>* schedule, ulong* block)
         {
-            fixed (ulong* blockPtr = block)
+            if (Avx2.IsSupported)
             {
-                if (Avx2.IsSupported)
+                for (int i = 0; i < 16; ++i)
                 {
-                    for (int i = 0; i < 16; ++i)
-                    {
-                        var idx = Vector128.Create((long)i);
-                        idx = Sse2.Add(idx, GatherIndex_64_128);
+                    var idx = Vector128.Create((long)i);
+                    idx = Sse2.Add(idx, GatherIndex_64_128);
 
-                        var vec = Avx2.GatherVector128(blockPtr, idx, 8);
+                    var vec = Avx2.GatherVector128(block, idx, 8);
 
-                        vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
 
-                        schedule[i] = vec;
-                    }
+                    schedule[i] = vec;
                 }
-                else
+            }
+            else
+            {
+                ulong* scheduleptr = (ulong*)schedule;
+
+                for (int i = 0; i < 16; ++i)
                 {
-                    ulong* scheduleptr = (ulong*)schedule;
+                    var tptr = scheduleptr + (i * 2);
 
-                    for (int i = 0; i < 16; ++i)
-                    {
-                        var tptr = scheduleptr + (i * 2);
-
-                        tptr[0] = BinaryPrimitives.ReverseEndianness(blockPtr[i]);
-                        tptr[1] = BinaryPrimitives.ReverseEndianness(blockPtr[i + 16]);
-                    }
+                    tptr[0] = BinaryPrimitives.ReverseEndianness(block[i]);
+                    tptr[1] = BinaryPrimitives.ReverseEndianness(block[i + 16]);
                 }
             }
 
@@ -583,69 +584,87 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static unsafe void InitScheduleSHA512Parallel(Span<Vector256<ulong>> schedule, Span<ulong> block)
+        private static unsafe void InitScheduleSHA512Parallel(Vector256<ulong>* schedule, ulong* block)
         {
-            fixed (Vector256<ulong>* schedulePtr = schedule)
+            for (int i = 0; i < 16; ++i)
             {
-                fixed (ulong* blockPtr = block)
-                {
-                    for (int i = 0; i < 16; ++i)
-                    {
-                        var idx = Vector256.Create((long)i);
-                        idx = Avx2.Add(idx, GatherIndex_64_256);
+                var idx = Vector256.Create((long)i);
+                idx = Avx2.Add(idx, GatherIndex_64_256);
 
-                        var vec = Avx2.GatherVector256(blockPtr, idx, 8);
+                var vec = Avx2.GatherVector256(block, idx, 8);
 
-                        vec = Avx2.Shuffle(vec.AsByte(), ReverseEndianess_64_256).AsUInt64();
+                vec = Avx2.Shuffle(vec.AsByte(), ReverseEndianess_64_256).AsUInt64();
 
-                        schedulePtr[i] = vec;
-                    }
-                }
+                schedule[i] = vec;
+            }
 
-                for (int i = 16; i < 80; ++i)
-                {
-                    //var tmp = chunk[i - 15];
-                    //var s0 = BitOperations.RotateRight(tmp, 7) ^ BitOperations.RotateRight(tmp, 18) ^ (tmp >> 3);
+            for (int i = 16; i < 80; ++i)
+            {
+                //var tmp = chunk[i - 15];
+                //var s0 = BitOperations.RotateRight(tmp, 7) ^ BitOperations.RotateRight(tmp, 18) ^ (tmp >> 3);
 
-                    var tmp = schedulePtr[i - 15];
+                var tmp = schedule[i - 15];
 
-                    var t0 = Avx2.ShiftRightLogical(tmp, 1);
-                    var t1 = Avx2.ShiftLeftLogical(tmp, 64 - 1);
-                    var S0 = Avx2.Or(t0, t1);
+                var t0 = Avx2.ShiftRightLogical(tmp, 1);
+                var t1 = Avx2.ShiftLeftLogical(tmp, 64 - 1);
+                var S0 = Avx2.Or(t0, t1);
 
-                    t0 = Avx2.ShiftRightLogical(tmp, 8);
-                    t1 = Avx2.ShiftLeftLogical(tmp, 64 - 8);
-                    t0 = Avx2.Or(t0, t1);
-                    S0 = Avx2.Xor(S0, t0);
+                t0 = Avx2.ShiftRightLogical(tmp, 8);
+                t1 = Avx2.ShiftLeftLogical(tmp, 64 - 8);
+                t0 = Avx2.Or(t0, t1);
+                S0 = Avx2.Xor(S0, t0);
 
-                    t0 = Avx2.ShiftRightLogical(tmp, 7);
-                    S0 = Avx2.Xor(S0, t0);
+                t0 = Avx2.ShiftRightLogical(tmp, 7);
+                S0 = Avx2.Xor(S0, t0);
 
-                    //tmp = chunk[i - 2];
-                    //var s1 = BitOperations.RotateRight(tmp, 17) ^ BitOperations.RotateRight(tmp, 19) ^ (tmp >> 10);
+                //tmp = chunk[i - 2];
+                //var s1 = BitOperations.RotateRight(tmp, 17) ^ BitOperations.RotateRight(tmp, 19) ^ (tmp >> 10);
 
-                    tmp = schedulePtr[i - 2];
+                tmp = schedule[i - 2];
 
-                    t0 = Avx2.ShiftRightLogical(tmp, 19);
-                    t1 = Avx2.ShiftLeftLogical(tmp, 64 - 19);
-                    var S1 = Avx2.Or(t0, t1);
+                t0 = Avx2.ShiftRightLogical(tmp, 19);
+                t1 = Avx2.ShiftLeftLogical(tmp, 64 - 19);
+                var S1 = Avx2.Or(t0, t1);
 
-                    t0 = Avx2.ShiftRightLogical(tmp, 61);
-                    t1 = Avx2.ShiftLeftLogical(tmp, 64 - 61);
-                    t0 = Avx2.Or(t0, t1);
-                    S1 = Avx2.Xor(S1, t0);
+                t0 = Avx2.ShiftRightLogical(tmp, 61);
+                t1 = Avx2.ShiftLeftLogical(tmp, 64 - 61);
+                t0 = Avx2.Or(t0, t1);
+                S1 = Avx2.Xor(S1, t0);
 
-                    t0 = Avx2.ShiftRightLogical(tmp, 6);
-                    S1 = Avx2.Xor(S1, t0);
+                t0 = Avx2.ShiftRightLogical(tmp, 6);
+                S1 = Avx2.Xor(S1, t0);
 
-                    //chunk[i] = chunk[i - 16] + s0 + chunk[i - 7] + s1;
+                //chunk[i] = chunk[i - 16] + s0 + chunk[i - 7] + s1;
 
-                    tmp = Avx2.Add(S0, schedulePtr[i - 16]);
-                    tmp = Avx2.Add(tmp, schedulePtr[i - 7]);
-                    tmp = Avx2.Add(tmp, S1);
+                tmp = Avx2.Add(S0, schedule[i - 16]);
+                tmp = Avx2.Add(tmp, schedule[i - 7]);
+                tmp = Avx2.Add(tmp, S1);
 
-                    schedulePtr[i] = tmp;
-                }
+                schedule[i] = tmp;
+            }
+        }
+
+        private static void ExtractHashState_SHA512(Vector128<ulong>* state, ulong* hash, int hashIdx)
+        {
+            Debug.Assert(hashIdx < Vector128<ulong>.Count);
+
+            ulong* stateScalar = (ulong*)state;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                hash[i] = stateScalar[Vector128<ulong>.Count * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashState_SHA512(Vector256<ulong>* state, ulong* hash, int hashIdx)
+        {
+            Debug.Assert(hashIdx < Vector256<ulong>.Count);
+
+            ulong* stateScalar = (ulong*)state;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                hash[i] = stateScalar[Vector256<ulong>.Count * i + hashIdx];
             }
         }
     }

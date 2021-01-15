@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -13,9 +14,11 @@ namespace ParallelCryptography
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static byte[] MD5(byte[] data)
         {
+            //MD5 formats its data in the same way SHA1 and SHA2 do.
             SHADataContext ctx = new SHADataContext(data);
 
-            Span<uint> state = stackalloc uint[4]
+            //MD5 initial hash state
+            uint* state = stackalloc uint[4]
             {
                 0x67452301,
                 0xefcdab89,
@@ -23,27 +26,42 @@ namespace ParallelCryptography
                 0x10325476
             };
 
-            Span<uint> schedule = stackalloc uint[16];
+            //MD5 schedule memory
+            uint* schedule = stackalloc uint[16];
 
             do
             {
-                ctx.PrepareBlock(MemoryMarshal.AsBytes(schedule));
+                //Prepare first/next block
+                ctx.PrepareBlock((byte*)schedule, sizeof(uint) * 16);
 
-                if (!BitConverter.IsLittleEndian)
+                if (!BitConverter.IsLittleEndian) //If big endian, reverse data endianess
                 {
-                    ReverseEndianess(schedule);
+                    ReverseEndianess(schedule, 16);
                 }
 
+                //Process data into hash state
                 ProcessBlockMD5(state, schedule);
             }
             while (!ctx.Complete);
 
+            //Hash byte order correction
             if (!BitConverter.IsLittleEndian)
             {
-                ReverseEndianess(state);
-            }
+                //fast path removes a copy on big endian platforms
 
-            return MemoryMarshal.AsBytes(state).ToArray();
+                byte[] hash = new byte[sizeof(uint) * 4];
+
+                fixed (byte* pHash = hash)
+                {
+                    StateCopyReversed_MD5(state, pHash);
+                }
+
+                return hash;
+            }
+            else
+            {
+                return new Span<byte>(state, sizeof(uint) * 4).ToArray();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -81,7 +99,8 @@ namespace ParallelCryptography
 
             bool* flags = stackalloc bool[Vector128<uint>.Count];
 
-            Span<uint> blocks = stackalloc uint[16 * Vector128<uint>.Count];
+            uint* blocksPtr = stackalloc uint[16 * Vector128<uint>.Count];
+
             Vector128<uint>* schedule = stackalloc Vector128<uint>[16];
 
             int concurrentHashes = 4;
@@ -92,14 +111,13 @@ namespace ParallelCryptography
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
 
-                    if (ctx.Complete)
-                        continue;
-
-                    Span<byte> span = MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16));
-                    ctx.PrepareBlock(span);
+                    if (!ctx.Complete)
+                    {
+                        ctx.PrepareBlock((byte*)(blocksPtr + i * 16), sizeof(uint) * 16);
+                    }
                 }
 
-                TransformParallelSchedule(schedule, blocks);
+                TransformParallelSchedule(schedule, blocksPtr);
 
                 ProcessBlocksParallelMD5(state, schedule);
 
@@ -124,9 +142,6 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<uint> singleSchedule = blocks.Slice(0, 16);
-                Span<byte> dataBlock = MemoryMarshal.AsBytes(singleSchedule);
-
                 for (int i = 0; i < Vector128<uint>.Count; ++i)
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
@@ -134,20 +149,18 @@ namespace ParallelCryptography
                     if (ctx.Complete)
                         continue;
 
-                    Span<uint> hash = MemoryMarshal.Cast<byte, uint>(hashes[i]);
-
-                    fixed (uint* pHash = hash)
+                    fixed (byte* pHash = hashes[i])
                     {
-                        ExtractHashState_MD5(state, pHash, i);
-                    }
+                        ExtractHashState_MD5(state, (uint*)pHash, i);
 
-                    do
-                    {
-                        ctx.PrepareBlock(dataBlock);
+                        do
+                        {
+                            ctx.PrepareBlock((byte*)blocksPtr, sizeof(uint) * 16);
 
-                        ProcessBlockMD5(hash, singleSchedule);
+                            ProcessBlockMD5((uint*)pHash, blocksPtr);
+                        }
+                        while (!ctx.Complete);
                     }
-                    while (!ctx.Complete);
                 }
             }
 
@@ -193,7 +206,9 @@ namespace ParallelCryptography
 
             bool* flags = stackalloc bool[Vector256<uint>.Count];
 
-            Span<uint> blocks = stackalloc uint[16 * Vector256<uint>.Count];
+            uint* blocks = stackalloc uint[16 * Vector256<uint>.Count];
+
+            //Span<uint> blocks = new Span<uint>(blocksPtr, 16 * Vector256<uint>.Count);
             Vector256<uint>* schedule = stackalloc Vector256<uint>[16];
 
             int concurrentHashes = 4;
@@ -207,8 +222,7 @@ namespace ParallelCryptography
                     if (ctx.Complete)
                         continue;
 
-                    Span<byte> span = MemoryMarshal.AsBytes(blocks.Slice(i * 16, 16));
-                    ctx.PrepareBlock(span);
+                    ctx.PrepareBlock((byte*)(blocks + i * 16), sizeof(uint) * 16);
                 }
 
                 TransformParallelSchedule(schedule, blocks);
@@ -236,9 +250,6 @@ namespace ParallelCryptography
 
             if (concurrentHashes > 0)
             {
-                Span<uint> singleSchedule = blocks.Slice(0, 16);
-                Span<byte> dataBlock = MemoryMarshal.AsBytes(singleSchedule);
-
                 for (int i = 0; i < Vector256<uint>.Count; ++i)
                 {
                     ref SHADataContext ctx = ref ctxArr[i];
@@ -251,15 +262,15 @@ namespace ParallelCryptography
                     fixed (uint* pHash = hash)
                     {
                         ExtractHashState_MD5(state, pHash, i);
-                    }
+                        
+                        do
+                        {
+                            ctx.PrepareBlock((byte*)blocks, sizeof(uint) * 16);
 
-                    do
-                    {
-                        ctx.PrepareBlock(dataBlock);
-
-                        ProcessBlockMD5(hash, singleSchedule);
+                            ProcessBlockMD5(pHash, blocks);
+                        }
+                        while (!ctx.Complete);
                     }
-                    while (!ctx.Complete);
                 }
             }
 
@@ -267,7 +278,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static void ProcessBlockMD5(Span<uint> state, Span<uint> schedule)
+        private static void ProcessBlockMD5(uint* state, uint* schedule)
         {
             uint a, b, c, d;
             uint f;
@@ -616,40 +627,30 @@ namespace ParallelCryptography
             return Avx2.Or(Avx2.ShiftLeftLogical(vec, tmp), Avx2.ShiftRightLogical(vec, tmp2));
         }
 
-        private static unsafe void TransformParallelSchedule(Vector128<uint>* transformed, Span<uint> schedule)
+        private static unsafe void TransformParallelSchedule(Vector128<uint>* transformed, uint* schedule)
         {
-            Debug.Assert(schedule.Length >= 16 * 4);
-
-            fixed (uint* schedPtr = schedule)
+            for (int i = 0; i < 16; ++i)
             {
-                for (int i = 0; i < 16; ++i)
+                if (Avx2.IsSupported)
                 {
-                    if (Avx2.IsSupported)
-                    {
-                        var idx = Vector128.Create(i);
-                        idx = Sse2.Add(idx, Vector128.Create(0, 16, 16 * 2, 16 * 3));
-                        transformed[i] = Avx2.GatherVector128(schedPtr, idx, 4);
-                    }
-                    else
-                    {
-                        transformed[i] = Vector128.Create(schedPtr[i], schedPtr[16 + i], schedPtr[16 * 2 + i], schedPtr[16 * 3 + i]);
-                    }
+                    var idx = Vector128.Create(i);
+                    idx = Sse2.Add(idx, Vector128.Create(0, 16, 16 * 2, 16 * 3));
+                    transformed[i] = Avx2.GatherVector128(schedule, idx, 4);
+                }
+                else
+                {
+                    transformed[i] = Vector128.Create(schedule[i], schedule[16 + i], schedule[16 * 2 + i], schedule[16 * 3 + i]);
                 }
             }
         }
 
-        private static unsafe void TransformParallelSchedule(Vector256<uint>* transformed, Span<uint> schedule)
+        private static unsafe void TransformParallelSchedule(Vector256<uint>* transformed, uint* schedule)
         {
-            Debug.Assert(schedule.Length >= 16 * 4);
-
-            fixed (uint* schedPtr = schedule)
+            for (int i = 0; i < 16; ++i)
             {
-                for (int i = 0; i < 16; ++i)
-                {
-                    var idx = Vector256.Create(i);
-                    idx = Avx2.Add(idx, Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7));
-                    transformed[i] = Avx2.GatherVector256(schedPtr, idx, 4);
-                }
+                var idx = Vector256.Create(i);
+                idx = Avx2.Add(idx, Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7));
+                transformed[i] = Avx2.GatherVector256(schedule, idx, 4);
             }
         }
 
@@ -675,6 +676,19 @@ namespace ParallelCryptography
             {
                 hash[i] = stateScalar[Vector256<uint>.Count * i + hashIdx];
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void StateCopyReversed_MD5(uint* state, byte* hash)
+        {
+            //x86 is not a platform that supports big endian, so logically x86 intrinsics would not help this.
+
+            uint* uintHash = (uint*)hash;
+
+            uintHash[0] = BinaryPrimitives.ReverseEndianness(state[0]);
+            uintHash[1] = BinaryPrimitives.ReverseEndianness(state[1]);
+            uintHash[2] = BinaryPrimitives.ReverseEndianness(state[2]);
+            uintHash[3] = BinaryPrimitives.ReverseEndianness(state[3]);
         }
     }
 }

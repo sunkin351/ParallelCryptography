@@ -8,7 +8,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace ParallelCryptography
 {
-    public static partial class HashFunctions
+    public static unsafe partial class HashFunctions
     {
         //Error Messages
         const string SSE2_NotAvailable = "SSE2 instructions not available";
@@ -16,59 +16,153 @@ namespace ParallelCryptography
 
         const string BigEndian_NotSupported = "Big Endian architecture not supported by this library.";
 
-        private static void ReverseEndianess(Span<uint> span)
+        private static void ReverseEndianess(uint* ptr, int len)
         {
             int i = 0;
 
-            if (Ssse3.IsSupported && span.Length >= 4)
+            if (Ssse3.IsSupported && len >= 4)
             {
-                var vecSpan = MemoryMarshal.Cast<uint, Vector128<uint>>(span);
-                for (; i < vecSpan.Length; ++i)
+                do
                 {
-                    vecSpan[i] = Ssse3.Shuffle(vecSpan[i].AsByte(), ReverseEndianess_32_128).AsUInt32();
+                    var ptrTmp = ptr + i;
+
+                    var vec = Sse2.LoadVector128(ptrTmp);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
+
+                    Sse2.Store(ptrTmp, vec);
+
+                    i += Vector128<uint>.Count;
                 }
-
-                if ((span.Length & 3) == 0)
-                    return;
-
-                i *= 4;
+                while (len - i >= Vector128<uint>.Count);
             }
 
-            for (; i < span.Length; ++i)
+            for (; i < len; ++i)
             {
-                span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
+                ptr[i] = BinaryPrimitives.ReverseEndianness(ptr[i]);
             }
         }
 
-        private static unsafe void ReverseEndianess(Span<ulong> span)
+        private static void ReverseEndianess(uint* source, uint* dest, int len)
         {
-            fixed (ulong* pSpan = span)
+            int vecLen = Vector128<uint>.Count;
+
+            if (Ssse3.IsSupported && len >= vecLen)
             {
                 int i = 0;
-                if (Avx2.IsSupported && span.Length >= 4)
+
+                do
                 {
-                    do
+                    var vec = Sse2.LoadVector128(source + i);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
+
+                    Sse2.Store(dest + i, vec);
+
+                    i += Vector128<uint>.Count;
+                }
+                while (len - i >= Vector128<uint>.Count);
+
+                if (i < len) //Remainder problem
+                {
+                    i = len - vecLen;
+
+                    var vec = Sse2.LoadVector128(source + i);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_32_128).AsUInt32();
+
+                    Sse2.Store(dest + i, vec);
+                }
+
+                return;
+            }
+
+            for (int i = 0; i < len; ++i)
+            {
+                dest[i] = BinaryPrimitives.ReverseEndianness(source[i]);
+            }
+        }
+
+        private static void ReverseEndianess(ulong* ptr, int len)
+        {
+            int i = 0;
+
+            if (Ssse3.IsSupported && len >= 4)
+            {
+                do
+                {
+                    var ptrTmp = ptr + i;
+
+                    var vec = Sse2.LoadVector128(ptrTmp);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
+
+                    Sse2.Store(ptrTmp, vec);
+
+                    i += Vector128<ulong>.Count;
+                }
+                while (len - i >= Vector128<ulong>.Count);
+
+                if (Vector128<ulong>.Count == 2)
+                {
+                    if (i != len)
+                        ptr[i] = BinaryPrimitives.ReverseEndianness(ptr[i]);
+
+                    return;
+                }
+            }
+
+            for (; i < len; ++i)
+            {
+                ptr[i] = BinaryPrimitives.ReverseEndianness(ptr[i]);
+            }
+        }
+
+        private static void ReverseEndianess(ulong* source, ulong* dest, int len)
+        {
+            int vecLen = Vector128<ulong>.Count;
+
+            if (Ssse3.IsSupported && len >= vecLen)
+            {
+                int i = 0;
+
+                do
+                {
+                    var vec = Sse2.LoadVector128(source + i);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
+
+                    Sse2.Store(dest + i, vec);
+
+                    i += Vector128<ulong>.Count;
+                }
+                while (len - i >= Vector128<ulong>.Count);
+
+                //Remainder problem
+                if (Vector128<ulong>.Count == 2) //Probably redundant...
+                {
+                    if (i != len)
                     {
-                        var tmp = Avx.LoadVector256(pSpan + i);
-
-                        tmp = Avx2.Shuffle(tmp.AsByte(), ReverseEndianess_64_256).AsUInt64();
-
-                        Avx.Store(pSpan + i, tmp);
-
-                        i += Vector256<ulong>.Count;
+                        dest[i] = BinaryPrimitives.ReverseEndianness(source[i]);
                     }
-                    while (span.Length - i >= Vector256<ulong>.Count);
-
-                    if ((span.Length & 3) == 0)
-                        return;
-
-                    i *= 4;
                 }
-
-                for (; i < span.Length; ++i)
+                else if (i < len)
                 {
-                    span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
+                    i = len - vecLen;
+
+                    var vec = Sse2.LoadVector128(source + i);
+
+                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
+
+                    Sse2.Store(dest + i, vec);
                 }
+
+                return;
+            }
+
+            for (int i = 0; i < len; ++i)
+            {
+                dest[i] = BinaryPrimitives.ReverseEndianness(source[i]);
             }
         }
 
@@ -80,111 +174,6 @@ namespace ParallelCryptography
                 res[i] = new byte[hashLength];
             }
             return res;
-        }
-
-        private static unsafe void ExtractHashFromState_32_128(Vector128<uint>* state, Span<uint> hash, int hashIdx)
-        {
-            if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hashIdx));
-            }
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < hash.Length; ++i)
-            {
-                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
-            }
-        }
-
-        private static unsafe void ExtractHashFromState_64_128(Vector128<ulong>* state, Span<ulong> hash, int hashIdx)
-        {
-            if ((uint)hashIdx >= (uint)Vector128<ulong>.Count)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hashIdx));
-            }
-
-            ulong* stateScalar = (ulong*)state;
-
-            for (int i = 0; i < hash.Length; ++i)
-            {
-                hash[i] = stateScalar[Vector128<ulong>.Count * i + hashIdx];
-            }
-        }
-
-        private static unsafe void ExtractHashFromState_32_256(Vector256<uint>* state, Span<uint> hash, int hashIdx)
-        {
-            if ((uint)hashIdx >= (uint)Vector256<uint>.Count)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hashIdx));
-            }
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < hash.Length; ++i)
-            {
-                hash[i] = stateScalar[Vector256<uint>.Count * i + hashIdx];
-            }
-        }
-
-        private static unsafe void ExtractHashFromState_64_256(Vector256<ulong>* state, Span<ulong> hash, int hashIdx)
-        {
-            if ((uint)hashIdx >= (uint)Vector256<ulong>.Count)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hashIdx));
-            }
-
-            ulong* stateScalar = (ulong*)state;
-
-            for (int i = 0; i < hash.Length; ++i)
-            {
-                hash[i] = stateScalar[Vector256<ulong>.Count * i + hashIdx];
-            }
-        }
-
-        private static void ExtractHashFromState_32_128(Span<Vector128<uint>> state, Span<uint> hash, int hashIdx)
-        {
-            if ((uint)hashIdx >= (uint)Vector128<uint>.Count)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hashIdx));
-            }
-
-            Span<uint> stateScalar = MemoryMarshal.Cast<Vector128<uint>, uint>(state);
-
-            var length = Math.Min(hash.Length, state.Length);
-
-            for (int i = 0; i < length; ++i)
-            {
-                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
-            }
-        }
-
-        private static void ExtractHashFromState_64_128(Span<Vector128<ulong>> state, Span<ulong> hash, int hashIdx)
-        {
-            Debug.Assert((uint)hashIdx < 2u, "'hashIdx' is outside the acceptable range");
-
-            Span<ulong> stateScalar = MemoryMarshal.Cast<Vector128<ulong>, ulong>(state);
-
-            var length = Math.Min(state.Length, hash.Length);
-
-            for (int i = 0; i < length; ++i)
-            {
-                hash[i] = stateScalar[2 * i + hashIdx];
-            }
-        }
-
-        private static void ExtractHashFromState(Span<Vector256<ulong>> state, Span<ulong> hash, int hashIdx)
-        {
-            Debug.Assert((uint)hashIdx < 4u, "'hashIdx' is outside the acceptable range");
-
-            Span<ulong> stateScalar = MemoryMarshal.Cast<Vector256<ulong>, ulong>(state);
-
-            var length = Math.Min(state.Length, hash.Length);
-
-            for (int i = 0; i < length; ++i)
-            {
-                hash[i] = stateScalar[4 * i + hashIdx];
-            }
         }
 
         //MD5 statics
@@ -217,7 +206,7 @@ namespace ParallelCryptography
         };
 
         //SHA1 statics
-        private static readonly Vector128<uint> LoadMask = Vector128.Create(uint.MaxValue, uint.MaxValue, uint.MaxValue, 0);
+        private static Vector128<uint> LoadMask => Vector128.Create(uint.MaxValue, uint.MaxValue, uint.MaxValue, 0);
 
         //SHA2 statics
 
@@ -253,100 +242,16 @@ namespace ParallelCryptography
             0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
         };
 
-        private static readonly Vector128<int> GatherIndex_32_128 = Vector128.Create(0, 16, 16 * 2, 16 * 3);
-        private static readonly Vector256<int> GatherIndex_32_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7);
+        private static Vector128<int> GatherIndex_32_128 => Vector128.Create(0, 16, 16 * 2, 16 * 3);
+        private static Vector256<int> GatherIndex_32_256 => Vector256.Create(0, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5, 16 * 6, 16 * 7);
 
-        private static readonly Vector128<long> GatherIndex_64_128 = Vector128.Create(0, 16);
-        private static readonly Vector256<long> GatherIndex_64_256 = Vector256.Create(0, 16, 16 * 2, 16 * 3);
+        private static Vector128<long> GatherIndex_64_128 => Vector128.Create(0, 16);
+        private static Vector256<long> GatherIndex_64_256 => Vector256.Create(0, 16, 16 * 2, 16 * 3);
 
-        private static readonly Vector128<byte> ReverseEndianess_32_128;
-        private static readonly Vector128<byte> ReverseEndianess_64_128;
-        private static readonly Vector256<byte> ReverseEndianess_64_256;
+        private static Vector128<byte> ReverseEndianess_32_128 => Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+        private static Vector128<byte> ReverseEndianess_64_128 => Vector128.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
+        private static Vector256<byte> ReverseEndianess_64_256 => Vector256.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
 
-        static HashFunctions()
-        {
-            ReverseEndianess_32_128 = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
-            ReverseEndianess_64_128 = Vector128.Create((byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
-            ReverseEndianess_64_256 = Vector256.Create(ReverseEndianess_64_128, ReverseEndianess_64_128);
-        }
-
-        [StructLayout(LayoutKind.Auto)]
-        private struct SHADataContext
-        {
-            private readonly byte[] _data;
-            private readonly ulong _bitsize;
-            private readonly int _dataLength;
-            private int _dataidx;
-            private bool appended;
-
-            public bool Complete { get; private set; }
-
-            public SHADataContext(byte[] data)
-            {
-                _data = data;
-
-                int len = data == null ? 0 : data.Length;
-
-                _dataLength = len;
-                _bitsize = (ulong)len * 8;
-                _dataidx = 0;
-                appended = false;
-                Complete = false;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-            public void PrepareBlock(Span<byte> span)
-            {
-                Debug.Assert(span.Length == 64 || span.Length == 128);
-
-                int len = Math.Min(span.Length, _dataLength - _dataidx);
-
-                if (len == 0)
-                {
-                    span.Clear();
-
-                    if (!appended)
-                    {
-                        span[0] = 0x80;
-                        appended = true;
-                    }
-
-                    WriteBitsize(span);
-                    Complete = true;
-                    return;
-                }
-
-                _data.AsSpan(_dataidx, len).CopyTo(span);
-                _dataidx += len;
-
-                if (len != span.Length)
-                {
-                    span.Slice(len).Clear();
-                }
-
-                if (_dataidx == _data.Length)
-                {
-                    int spaceLeft = span.Length - len;
-
-                    if (spaceLeft > 0)
-                    {
-                        span[len] = 0x80;
-                        appended = true;
-
-                        if (spaceLeft - 1 >= 8)
-                        {
-                            WriteBitsize(span);
-                            Complete = true;
-                        }
-                    }
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void WriteBitsize(Span<byte> span)
-            {
-                BinaryPrimitives.WriteUInt64BigEndian(span.Slice(span.Length - sizeof(ulong)), _bitsize);
-            }
-        }
+        
     }
 }

@@ -1,13 +1,17 @@
-﻿using System;
+using System;
 using System.Security.Cryptography;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Jobs;
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
+
 
 namespace ParallelCryptography.Benchmarks
 {
-    [CoreJob]
-    [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
+    [SimpleJob(RuntimeMoniker.NetCoreApp50), GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
     public class HashAlgorithmBenchmarks
     {
         MD5 NativeMD5;
