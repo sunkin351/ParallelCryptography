@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -173,14 +172,7 @@ namespace ParallelCryptography
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void ExtractHashState_SHA224(Vector128<uint>* state, uint* hash, int hashIdx)
         {
-            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < 7; ++i)
-            {
-                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 7);
         }
     }
 }

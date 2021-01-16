@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -385,14 +384,7 @@ namespace ParallelCryptography
 
         private static void ExtractHashState_SHA256(Vector128<uint>* state, uint* hash, int hashIdx)
         {
-            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < 8; ++i)
-            {
-                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 8);
         }
     }
 }

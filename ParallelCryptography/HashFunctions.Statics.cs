@@ -1,8 +1,5 @@
-using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -103,13 +100,10 @@ namespace ParallelCryptography
                 }
                 while (len - i >= Vector128<ulong>.Count);
 
-                if (Vector128<ulong>.Count == 2)
-                {
-                    if (i != len)
-                        ptr[i] = BinaryPrimitives.ReverseEndianness(ptr[i]);
+                if (i != len)
+                    ptr[i] = BinaryPrimitives.ReverseEndianness(ptr[i]);
 
-                    return;
-                }
+                return;
             }
 
             for (; i < len; ++i)
@@ -139,22 +133,9 @@ namespace ParallelCryptography
                 while (len - i >= Vector128<ulong>.Count);
 
                 //Remainder problem
-                if (Vector128<ulong>.Count == 2) //Probably redundant...
+                if (i != len)
                 {
-                    if (i != len)
-                    {
-                        dest[i] = BinaryPrimitives.ReverseEndianness(source[i]);
-                    }
-                }
-                else if (i < len)
-                {
-                    i = len - vecLen;
-
-                    var vec = Sse2.LoadVector128(source + i);
-
-                    vec = Ssse3.Shuffle(vec.AsByte(), ReverseEndianess_64_128).AsUInt64();
-
-                    Sse2.Store(dest + i, vec);
+                    dest[i] = BinaryPrimitives.ReverseEndianness(source[i]);
                 }
 
                 return;
@@ -174,6 +155,54 @@ namespace ParallelCryptography
                 res[i] = new byte[hashLength];
             }
             return res;
+        }
+
+        private static void ExtractHashState(Vector128<uint>* state, uint* hash, int hashIdx, int count)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
+
+            uint* scalarState = (uint*)state;
+
+            for (int i = 0; i < count; ++i)
+            {
+                hash[i] = scalarState[Vector128<uint>.Count * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashState(Vector256<uint>* state, uint* hash, int hashIdx, int count)
+        {
+            Debug.Assert((uint)hashIdx < (uint)Vector256<uint>.Count);
+
+            uint* scalarState = (uint*)state;
+
+            for (int i = 0; i < count; ++i)
+            {
+                hash[i] = scalarState[Vector256<uint>.Count * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashState(Vector128<ulong>* state, ulong* hash, int hashIdx, int count)
+        {
+            Debug.Assert((ulong)hashIdx < (ulong)Vector128<ulong>.Count);
+
+            ulong* scalarState = (ulong*)state;
+
+            for (int i = 0; i < count; ++i)
+            {
+                hash[i] = scalarState[Vector128<ulong>.Count * i + hashIdx];
+            }
+        }
+
+        private static void ExtractHashState(Vector256<ulong>* state, ulong* hash, int hashIdx, int count)
+        {
+            Debug.Assert((ulong)hashIdx < (ulong)Vector256<ulong>.Count);
+
+            ulong* scalarState = (ulong*)state;
+
+            for (int i = 0; i < count; ++i)
+            {
+                hash[i] = scalarState[Vector256<ulong>.Count * i + hashIdx];
+            }
         }
 
         //MD5 statics

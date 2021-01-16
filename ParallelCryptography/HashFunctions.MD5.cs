@@ -661,26 +661,12 @@ namespace ParallelCryptography
 
         private static void ExtractHashState_MD5(Vector128<uint>* state, uint* hash, int hashIdx)
         {
-            Debug.Assert((uint)hashIdx < (uint)Vector128<uint>.Count);
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < 4; ++i)
-            {
-                hash[i] = stateScalar[Vector128<uint>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 4);
         }
 
         private static void ExtractHashState_MD5(Vector256<uint>* state, uint* hash, int hashIdx)
         {
-            Debug.Assert((uint)hashIdx < (uint)Vector256<uint>.Count);
-
-            uint* stateScalar = (uint*)state;
-
-            for (int i = 0; i < 4; ++i)
-            {
-                hash[i] = stateScalar[Vector256<uint>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 4);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

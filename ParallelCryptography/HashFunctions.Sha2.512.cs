@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -650,26 +649,12 @@ namespace ParallelCryptography
 
         private static void ExtractHashState_SHA512(Vector128<ulong>* state, ulong* hash, int hashIdx)
         {
-            Debug.Assert(hashIdx < Vector128<ulong>.Count);
-
-            ulong* stateScalar = (ulong*)state;
-
-            for (int i = 0; i < 8; ++i)
-            {
-                hash[i] = stateScalar[Vector128<ulong>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 8);
         }
 
         private static void ExtractHashState_SHA512(Vector256<ulong>* state, ulong* hash, int hashIdx)
         {
-            Debug.Assert(hashIdx < Vector256<ulong>.Count);
-
-            ulong* stateScalar = (ulong*)state;
-
-            for (int i = 0; i < 8; ++i)
-            {
-                hash[i] = stateScalar[Vector256<ulong>.Count * i + hashIdx];
-            }
+            ExtractHashState(state, hash, hashIdx, 8);
         }
     }
 }
