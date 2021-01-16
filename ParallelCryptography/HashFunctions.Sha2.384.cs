@@ -12,6 +12,7 @@ namespace ParallelCryptography
     public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[] SHA384(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data, SHADataContext.AlgorithmWordSize._64);
@@ -54,6 +55,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2)
         {
             if (!BitConverter.IsLittleEndian)
@@ -83,6 +85,7 @@ namespace ParallelCryptography
             Vector128<ulong>* schedule = stackalloc Vector128<ulong>[80];
 
             bool* flags = stackalloc bool[Vector128<ulong>.Count];
+            Unsafe.InitBlock(flags, 0, 2);
 
             var contexts = new SHADataContext[2]
             {
@@ -168,6 +171,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!BitConverter.IsLittleEndian)
@@ -196,7 +200,9 @@ namespace ParallelCryptography
 
             Vector256<ulong>* schedule = stackalloc Vector256<ulong>[80];
 
-            Span<bool> flags = stackalloc bool[4];
+            bool* flags = stackalloc bool[4];
+            Unsafe.InitBlock(flags, 0, 4);
+
             SHADataContext[] contexts = new SHADataContext[4]
             {
                 new SHADataContext(data1, SHADataContext.AlgorithmWordSize._64),

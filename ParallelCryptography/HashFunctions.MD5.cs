@@ -12,6 +12,7 @@ namespace ParallelCryptography
     public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[] MD5(byte[] data)
         {
             //MD5 formats its data in the same way SHA1 and SHA2 do.
@@ -65,6 +66,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Sse2.IsSupported)
@@ -98,6 +100,7 @@ namespace ParallelCryptography
             };
 
             bool* flags = stackalloc bool[Vector128<uint>.Count];
+            Unsafe.InitBlock(flags, 0, 4); //Assuming 4 bytes, aligned
 
             uint* blocksPtr = stackalloc uint[16 * Vector128<uint>.Count];
 
@@ -168,6 +171,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4, byte[] data5, byte[] data6, byte[] data7, byte[] data8)
         {
             if (!Sse2.IsSupported)
@@ -205,6 +209,7 @@ namespace ParallelCryptography
             };
 
             bool* flags = stackalloc bool[Vector256<uint>.Count];
+            Unsafe.InitBlock(flags, 0, 8);
 
             uint* blocks = stackalloc uint[16 * Vector256<uint>.Count];
 

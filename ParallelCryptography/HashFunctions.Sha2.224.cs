@@ -10,6 +10,7 @@ namespace ParallelCryptography
     public static unsafe partial class HashFunctions
     {
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[] SHA224(byte[] data)
         {
             SHADataContext ctx = new SHADataContext(data);
@@ -54,6 +55,7 @@ namespace ParallelCryptography
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public static byte[][] SHA224Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
             if (!Sse2.IsSupported)
@@ -79,6 +81,7 @@ namespace ParallelCryptography
             };
 
             bool* flags = stackalloc bool[4];
+            Unsafe.InitBlock(flags, 0, 4);
             
             SHADataContext[] contexts = new SHADataContext[4]
             {
