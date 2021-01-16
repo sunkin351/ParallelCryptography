@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 namespace ParallelCryptography
 {
     [StructLayout(LayoutKind.Auto)]
-    internal struct SHADataContext
+    internal unsafe struct SHADataContext
     {
         private readonly byte[] _data;
         private readonly ulong _bitsize;
@@ -34,53 +34,49 @@ namespace ParallelCryptography
             Complete = false;
         }
 
-        public unsafe void PrepareBlock(byte* ptr, int len)
-        {
-            PrepareBlock(new Span<byte>(ptr, len));
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        public void PrepareBlock(Span<byte> span)
+        public void PrepareBlock(byte* ptr, int len)
         {
-            Debug.Assert(_wordSize switch { AlgorithmWordSize._32 => span.Length == 64, AlgorithmWordSize._64 => span.Length == 128 });
+            Debug.Assert(ptr != null);
+            Debug.Assert(_wordSize switch { AlgorithmWordSize._32 => len == 64, AlgorithmWordSize._64 => len == 128 });
             Debug.Assert(!this.Complete);
 
             //Data remaining
             int lenRemain = _dataLength - _dataidx;
 
-            if (lenRemain >= span.Length)
+            if (lenRemain >= len)
             {
                 //Straight copy if there's more data than can fit
-                _data.AsSpan(_dataidx, span.Length).CopyTo(span);
-                _dataidx += span.Length;
+                _data.AsSpan(_dataidx, len).CopyTo(new Span<byte>(ptr, len));
+                _dataidx += len;
             }
             else if (lenRemain > 0)
             {
                 Debug.Assert(!appended);
 
-                _data.AsSpan(_dataidx, lenRemain).CopyTo(span);
+                _data.AsSpan(_dataidx, lenRemain).CopyTo(new Span<byte>(ptr, len));
 
-                span[lenRemain++] = 0x80;
+                ptr[lenRemain++] = 0x80;
                 appended = true;
 
-                span.Slice(lenRemain).Clear();
+                Unsafe.InitBlockUnaligned(ptr + lenRemain, 0, (uint)(len - lenRemain));
 
-                if (span.Length - lenRemain >= ((int)_wordSize + 1) * 8)
+                if (len - lenRemain >= ((int)_wordSize + 1) * 8)
                 {
-                    BinaryPrimitives.WriteUInt64BigEndian(span.Slice(span.Length - sizeof(ulong)), _bitsize);
+                    *(ulong*)(ptr + (len - sizeof(ulong))) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
                     Complete = true;
                 }
             }
             else
             {
-                span.Clear();
+                Unsafe.InitBlock(ptr, 0, (uint)len);
 
                 if (!appended)
                 {
-                    span[0] = 0x80;
+                    ptr[0] = 0x80;
                 }
 
-                BinaryPrimitives.WriteUInt64BigEndian(span.Slice(span.Length - sizeof(ulong)), _bitsize);
+                *(ulong*)(ptr + (len - sizeof(ulong))) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
                 Complete = true;
             }
         }
