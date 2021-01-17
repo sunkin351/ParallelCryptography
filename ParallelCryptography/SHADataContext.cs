@@ -14,31 +14,29 @@ namespace ParallelCryptography
         private readonly int _dataLength;
         private int _dataidx;
         private readonly AlgorithmWordSize _wordSize;
-        private bool appended;
+        private ContextState state;
 
-        public bool Complete { get; private set; } 
+        public bool Complete { get => state == ContextState.Complete; } 
 
         public SHADataContext(byte[] data, AlgorithmWordSize wordSize = AlgorithmWordSize._32)
         {
             _data = data;
 
-            int len = data == null ? 0 : data.Length;
+            int len = data is null ? 0 : data.Length;
 
             _dataLength = len;
             _bitsize = (ulong)len * 8;
             _dataidx = 0;
 
             _wordSize = wordSize;
-
-            appended = false;
-            Complete = false;
+            state = default;
         }
 
         public void PrepareBlock(byte* ptr, int len)
         {
             Debug.Assert(ptr != null);
             Debug.Assert(_wordSize switch { AlgorithmWordSize._32 => len == 64, AlgorithmWordSize._64 => len == 128 });
-            Debug.Assert(!this.Complete);
+            Debug.Assert(state != ContextState.Complete);
 
             //Data remaining
             int lenRemain = _dataLength - _dataidx;
@@ -51,32 +49,46 @@ namespace ParallelCryptography
             }
             else if (lenRemain > 0)
             {
-                Debug.Assert(!appended);
+                //We've reached the end of the data to process
 
+                //Assert context state
+                Debug.Assert(state == ContextState.Default);
+
+                //Copy remaining data
                 _data.AsSpan(_dataidx, lenRemain).CopyTo(new Span<byte>(ptr, len));
 
+                //Append ending byte
                 ptr[lenRemain++] = 0x80;
-                appended = true;
+                state = ContextState.Appended; //Set state
 
+                //Zero remaining memory
                 Unsafe.InitBlockUnaligned(ptr + lenRemain, 0, (uint)(len - lenRemain));
 
+                //If enough space is available at the end
                 if (len - lenRemain >= ((int)_wordSize + 1) * 8)
                 {
+                    //add bit length to the end of the block, big endian
                     *(ulong*)(ptr + (len - sizeof(ulong))) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
-                    Complete = true;
+                    //Set completion state
+                    state = ContextState.Complete;
                 }
             }
             else
             {
+                //Zero entire block
                 Unsafe.InitBlock(ptr, 0, (uint)len);
 
-                if (!appended)
+                //If ending byte has not been appended yet
+                if (state != ContextState.Appended)
                 {
+                    //Append it
                     ptr[0] = 0x80;
                 }
 
+                //add bit length to the end of the block, big endian
                 *(ulong*)(ptr + (len - sizeof(ulong))) = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(_bitsize) : _bitsize;
-                Complete = true;
+                //Set completion flag
+                state = ContextState.Complete;
             }
         }
 
@@ -84,6 +96,13 @@ namespace ParallelCryptography
         {
             _32 = 0,
             _64 = 1
+        }
+
+        private enum ContextState : byte
+        {
+            Default,
+            Appended,
+            Complete
         }
     }
 }
