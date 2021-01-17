@@ -10,7 +10,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] SHA1(byte[] data)
         {
@@ -53,7 +52,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static unsafe byte[][] SHA1Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
@@ -169,7 +167,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA1(uint* schedule)
         {
             if (BitConverter.IsLittleEndian)
@@ -235,7 +232,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA1Parallel(Vector128<uint>* schedule, uint* block)
         {
             if (Avx2.IsSupported)
@@ -282,7 +278,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockSHA1(uint* state, uint* chunk)
         {
             uint a, b, c, d, e;
@@ -352,7 +347,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA1(Vector128<uint>* state, Vector128<uint>* schedule)
         {
             Vector128<uint> a, b, c, d, e;

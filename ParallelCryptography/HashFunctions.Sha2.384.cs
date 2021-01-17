@@ -8,7 +8,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] SHA384(byte[] data)
         {
@@ -51,7 +50,6 @@ namespace ParallelCryptography
             return new Span<byte>(state, sizeof(ulong) * 6).ToArray();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2)
         {
@@ -167,7 +165,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA384Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {

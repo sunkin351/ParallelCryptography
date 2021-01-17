@@ -11,7 +11,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] MD5(byte[] data)
         {
@@ -65,7 +64,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
@@ -170,7 +168,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static unsafe byte[][] MD5Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4, byte[] data5, byte[] data6, byte[] data7, byte[] data8)
         {
@@ -282,7 +279,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockMD5(uint* state, uint* schedule)
         {
             uint a, b, c, d;
@@ -352,7 +348,6 @@ namespace ParallelCryptography
             state[3] += d;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelMD5(Vector128<uint>* state, Vector128<uint>* schedule)
         {
             Vector128<uint> a, b, c, d;
@@ -494,7 +489,6 @@ namespace ParallelCryptography
             state[3] = Sse2.Add(d, state[3]);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelMD5(Vector256<uint>* state, Vector256<uint>* schedule)
         {
             Vector256<uint> a, b, c, d;

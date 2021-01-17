@@ -8,7 +8,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] SHA224(byte[] data)
         {
@@ -53,7 +52,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA224Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
@@ -169,7 +167,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void ExtractHashState_SHA224(Vector128<uint>* state, uint* hash, int hashIdx)
         {
             ExtractHashState(state, hash, hashIdx, 7);

@@ -10,7 +10,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] SHA512(byte[] data)
         {
@@ -63,7 +62,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA512Parallel(byte[] data1, byte[] data2)
         {
@@ -178,7 +176,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA512Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
@@ -294,7 +291,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlockSHA512(ulong* state, ulong* schedule)
         {
             fixed (ulong* tableK = SHA512TableK)
@@ -340,7 +336,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA512(Vector128<ulong>* state, Vector128<ulong>* schedule)
         {
             Vector128<ulong> a, b, c, d, e, f, g, h;
@@ -371,16 +366,6 @@ namespace ParallelCryptography
 
                     tmp1 = Sse2.Add(tmp1, schedule[i]);
                     tmp1 = Sse2.Add(tmp1, h);
-
-                    //if (Avx2.IsSupported)
-                    //{
-                    //    var idx = Sse2.Add(Vector128.Create((long)i), Sha512GatherIndex_128);
-                    //    tmp1 = Avx2.GatherVector128(schedulePtr, idx, 8);
-                    //}
-                    //else
-                    //{
-                    //    tmp1 = Vector128.Create(schedulePtr[i], schedulePtr[i + 80]);
-                    //}
 
                     //var S0 = BitOperations.RotateRight(a, 28) ^ BitOperations.RotateRight(a, 34) ^ BitOperations.RotateRight(a, 39);
                     S = Sse2.Or(Sse2.ShiftRightLogical(e, 14), Sse2.ShiftLeftLogical(e, 64 - 14));
@@ -425,7 +410,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA512(Vector256<ulong>* state, Vector256<ulong>* schedule)
         {
             Vector256<ulong> a, b, c, d, e, f, g, h;
@@ -490,7 +474,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512(ulong* schedule)
         {
             if (BitConverter.IsLittleEndian)
@@ -510,7 +493,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512Parallel(Vector128<ulong>* schedule, ulong* block)
         {
             if (Avx2.IsSupported)
@@ -586,7 +568,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA512Parallel(Vector256<ulong>* schedule, ulong* block)
         {
             for (int i = 0; i < 16; ++i)

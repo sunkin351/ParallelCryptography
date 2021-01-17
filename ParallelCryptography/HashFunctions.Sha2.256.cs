@@ -10,7 +10,6 @@ namespace ParallelCryptography
 {
     public static unsafe partial class HashFunctions
     {
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[] SHA256(byte[] data)
         {
@@ -51,7 +50,6 @@ namespace ParallelCryptography
             return new Span<byte>(state, sizeof(uint) * 8).ToArray();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         [SkipLocalsInit]
         public static byte[][] SHA256Parallel(byte[] data1, byte[] data2, byte[] data3, byte[] data4)
         {
@@ -166,7 +164,6 @@ namespace ParallelCryptography
             return hashes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ProcessBlockSHA256(uint* state, uint* schedule)
         {
             uint a, b, c, d, e, f, g, h;
@@ -209,7 +206,6 @@ namespace ParallelCryptography
             state[7] += h;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void ProcessBlocksParallelSHA256(Vector128<uint>* state, Vector128<uint>* schedule)
         {
             Vector128<uint> a, b, c, d, e, f, g, h;
@@ -282,7 +278,6 @@ namespace ParallelCryptography
             state[7] = Sse2.Add(h, state[7]);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA256(uint* chunk)
         {
             if (BitConverter.IsLittleEndian)
@@ -302,7 +297,6 @@ namespace ParallelCryptography
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void InitScheduleSHA256Parallel(Vector128<uint>* schedule, uint* block)
         {
             if (Avx2.IsSupported)

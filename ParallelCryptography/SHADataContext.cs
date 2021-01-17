@@ -34,7 +34,6 @@ namespace ParallelCryptography
             Complete = false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void PrepareBlock(byte* ptr, int len)
         {
             Debug.Assert(ptr != null);
